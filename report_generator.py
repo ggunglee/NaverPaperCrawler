@@ -67,6 +67,21 @@ KNOWN_CATEGORIES = {
     ],
 }
 
+MARTIAL_LAW_CONTEXT_KEYWORDS = {
+    "12·3",
+    "12.3",
+    "비상계엄",
+    "윤석열",
+    "김용현",
+    "조지호",
+    "여인형",
+    "곽종근",
+    "노상원",
+    "문상호",
+    "계엄사",
+    "합참",
+}
+
 MONITOR_KEYWORDS = sorted(
     {
         "특검",
@@ -425,6 +440,19 @@ class ReportDatabase:
                 (category, limit),
             ).fetchall()
 
+    def all_claims(self):
+        with self.connect() as conn:
+            return conn.execute("SELECT id, claim_text FROM exclusive_claims ORDER BY id").fetchall()
+
+    def update_claim_embedding(self, claim_id, embedding):
+        now = datetime.now().isoformat(timespec="seconds")
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE exclusive_claims SET embedding_json = ?, created_at = COALESCE(created_at, ?) WHERE id = ?",
+                (json.dumps(embedding), now, claim_id),
+            )
+            conn.commit()
+
     def save_report_run(self, report_date, output_path, article_ids, summary_md):
         now = datetime.now().isoformat(timespec="seconds")
         with self.connect() as conn:
@@ -489,6 +517,11 @@ def parse_args():
     parser.add_argument("--from", dest="date_from", help="Start date YYYYMMDD for seeding/backfill.")
     parser.add_argument("--to", dest="date_to", help="End date YYYYMMDD for seeding/backfill.")
     parser.add_argument("--seed-exclusive", action="store_true", help="Build the exclusive-claim comparison DB.")
+    parser.add_argument(
+        "--refresh-claim-embeddings",
+        action="store_true",
+        help="Rebuild stored exclusive-claim vectors with the selected embedding backend.",
+    )
     parser.add_argument("--backfill-source", action="store_true", help="Crawl list pages for --from to --to before seeding.")
     parser.add_argument("--preflight", action="store_true", help="Check dependencies, DB schema, and API-key readiness.")
     parser.add_argument("--classify-uncertain", action="store_true", help="Ask category for ambiguous articles in terminal.")
@@ -500,6 +533,12 @@ def parse_args():
     parser.add_argument("--gemini-model", default=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
     parser.add_argument("--embedding-backend", choices=["auto", "sentence", "lexical"], default="auto")
     parser.add_argument("--similarity-threshold", type=float, default=SIMILARITY_THRESHOLD)
+    parser.add_argument(
+        "--same-day-threshold",
+        type=float,
+        default=0.6,
+        help="Threshold for suppressing duplicate articles within the same report run.",
+    )
     parser.add_argument("--exclusive-threshold", type=float, default=EXCLUSIVE_THRESHOLD)
     return parser.parse_args()
 
@@ -526,7 +565,16 @@ def main():
         count = seed_exclusive_claims(db, args)
         print(f"exclusive_claims seeded: {count}")
 
-    if not args.seed_exclusive and not args.backfill_source and not args.suggest_categories:
+    if args.refresh_claim_embeddings:
+        count = refresh_claim_embeddings(db, args)
+        print(f"exclusive_claims embeddings refreshed: {count}")
+
+    if (
+        not args.seed_exclusive
+        and not args.backfill_source
+        and not args.suggest_categories
+        and not args.refresh_claim_embeddings
+    ):
         report = generate_report(db, args)
         print(report)
 
@@ -607,10 +655,12 @@ def suggest_categories(db, args):
         date=None if args.date_from or args.date_to else args.date,
         date_from=args.date_from,
         date_to=args.date_to,
-        limit=args.limit,
+        limit=args.limit if args.all_articles else None,
     )
     if not args.all_articles:
         rows = [row for row in rows if matches_monitor_keywords(row)]
+        if args.limit:
+            rows = rows[: args.limit]
     uncertain = []
     for row in rows:
         if row["category"]:
@@ -673,10 +723,21 @@ def seed_exclusive_claims(db, args):
     return count
 
 
+def refresh_claim_embeddings(db, args):
+    embedder = Embedder(backend=args.embedding_backend)
+    count = 0
+    for row in db.all_claims():
+        db.update_claim_embedding(row["id"], embedder.encode(row["claim_text"]))
+        count += 1
+    return count
+
+
 def generate_report(db, args):
-    rows = db.pending_articles(date=args.date, limit=args.limit)
+    rows = db.pending_articles(date=args.date, limit=args.limit if args.all_articles else None)
     if not args.all_articles:
         rows = [row for row in rows if matches_monitor_keywords(row)]
+        if args.limit:
+            rows = rows[: args.limit]
     if not rows:
         report = f"# 아침 보고서 - {args.date}\n\n새로 분석할 기사가 없습니다.\n"
         output_path = write_report_file(args.date, report) if args.output_file else None
@@ -703,6 +764,17 @@ def generate_report(db, args):
                 matched_article_id=matched_id,
             )
             skipped.append((row, "similarity", score, matched_id))
+            continue
+        same_day_score, same_day_id = most_similar_candidate(db, embedder, row, candidates_by_category[category])
+        if same_day_score >= args.same_day_threshold:
+            db.save_analysis(
+                row["id"],
+                category,
+                "skipped_same_day_similarity",
+                similarity_score=same_day_score,
+                matched_article_id=same_day_id,
+            )
+            skipped.append((row, "same_day_similarity", same_day_score, same_day_id))
             continue
         candidates_by_category[category].append(row)
 
@@ -898,6 +970,35 @@ def most_similar_past_article(db, embedder, row, category):
     return best_score, best_id
 
 
+def most_similar_candidate(db, embedder, row, candidates):
+    current = article_embedding(db, embedder, row)
+    best_score = 0.0
+    best_id = None
+    for candidate in candidates:
+        score = max(
+            cosine(current, article_embedding(db, embedder, candidate)),
+            title_token_similarity(row["title"], candidate["title"]),
+        )
+        if score > best_score:
+            best_score = score
+            best_id = candidate["id"]
+    return best_score, best_id
+
+
+def title_token_similarity(left, right):
+    left_tokens = title_tokens(left)
+    right_tokens = title_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / min(len(left_tokens), len(right_tokens))
+
+
+def title_tokens(text):
+    text = (text or "").replace("尹", "윤석열")
+    tokens = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", text.lower()))
+    return {token for token in tokens if token not in {"종합", "단독", "속보"}}
+
+
 def article_embedding(db, embedder, row):
     cached = db.embedding(row["id"], embedder.cache_name)
     if cached:
@@ -933,8 +1034,12 @@ def is_duplicate_claim(db, category, vector, threshold):
 
 def recommend_category(row):
     text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{trim_text(row['body'] or '', 1200)}"
+    if "2차 종합특검" in text or "종합특검" in text:
+        return "2차 종합특검", 99, ["종합특검"]
     scores = []
     for category, keywords in KNOWN_CATEGORIES.items():
+        if category == "내란 재판" and not any(keyword in text for keyword in MARTIAL_LAW_CONTEXT_KEYWORDS):
+            continue
         hits = [keyword for keyword in keywords if keyword in text]
         if hits:
             scores.append((len(hits), category, hits))
@@ -1025,13 +1130,49 @@ def render_report(report_date, items, skipped):
         lines.append("")
 
     if skipped:
-        lines.append("## 걸러진 스트레이트/반복 기사")
-        lines.append("")
-        for row, reason, score, matched_id in skipped:
-            suffix = f" 유사도 {score:.2f}" if score is not None else reason
-            lines.append(f"- {row['title']} / {row['newspaper']} ({suffix})")
-            lines.append(f"  {row['url']}")
-        lines.append("")
+        similarity_rows = [item for item in skipped if item[1] in {"similarity", "same_day_similarity"}]
+        uncertain_rows = [item for item in skipped if item[1] == "category_uncertain"]
+        failed_rows = [item for item in skipped if str(item[1]).startswith("llm_failed")]
+
+        if similarity_rows:
+            lines.append("## 걸러진 스트레이트/반복 기사")
+            lines.append("")
+            for row, reason, score, matched_id in similarity_rows:
+                label = "당일 유사도" if reason == "same_day_similarity" else "유사도"
+                suffix = f"{label} {score:.2f}" if score is not None else reason
+                lines.append(f"- {row['title']} / {row['newspaper']} ({suffix})")
+                lines.append(f"  {row['url']}")
+            lines.append("")
+
+        if uncertain_rows:
+            lines.append("## 분류 필요 기사")
+            lines.append("")
+            for row, reason, score, matched_id in uncertain_rows:
+                lines.append(f"- {row['title']} / {row['newspaper']}")
+                lines.append(f"  {row['url']}")
+            lines.append("")
+
+        if failed_rows:
+            lines.append("## 분석 실패 기사")
+            lines.append("")
+            for row, reason, score, matched_id in failed_rows:
+                lines.append(f"- {row['title']} / {row['newspaper']} ({reason})")
+                lines.append(f"  {row['url']}")
+            lines.append("")
+
+        other_rows = [
+            item
+            for item in skipped
+            if item not in similarity_rows and item not in uncertain_rows and item not in failed_rows
+        ]
+        if other_rows:
+            lines.append("## 기타 제외 기사")
+            lines.append("")
+            for row, reason, score, matched_id in other_rows:
+                suffix = f"유사도 {score:.2f}" if score is not None else reason
+                lines.append(f"- {row['title']} / {row['newspaper']} ({suffix})")
+                lines.append(f"  {row['url']}")
+            lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
