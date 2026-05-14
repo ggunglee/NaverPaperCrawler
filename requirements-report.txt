@@ -1,0 +1,3 @@
+google-generativeai>=0.8
+kss>=6.0
+numpy>=1.26
