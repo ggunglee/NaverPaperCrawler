@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -103,10 +104,11 @@ SCHEMA_STATEMENTS = [
     """,
     """
     CREATE TABLE IF NOT EXISTS article_embeddings (
-        article_id INTEGER PRIMARY KEY,
+        article_id INTEGER NOT NULL,
         model_name TEXT NOT NULL,
         embedding_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        UNIQUE(article_id, model_name)
     )
     """,
     """
@@ -171,7 +173,34 @@ class ReportDatabase:
         with self.connect() as conn:
             for statement in SCHEMA_STATEMENTS:
                 conn.execute(statement)
+            self._migrate_embedding_cache(conn)
             conn.commit()
+
+    def _migrate_embedding_cache(self, conn):
+        columns = conn.execute("PRAGMA table_info(article_embeddings)").fetchall()
+        pk_columns = [row["name"] for row in columns if row["pk"]]
+        if pk_columns != ["article_id"]:
+            return
+        conn.execute("ALTER TABLE article_embeddings RENAME TO article_embeddings_old")
+        conn.execute(
+            """
+            CREATE TABLE article_embeddings (
+                article_id INTEGER NOT NULL,
+                model_name TEXT NOT NULL,
+                embedding_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(article_id, model_name)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO article_embeddings (article_id, model_name, embedding_json, created_at)
+            SELECT article_id, model_name, embedding_json, created_at
+            FROM article_embeddings_old
+            """
+        )
+        conn.execute("DROP TABLE article_embeddings_old")
 
     def pending_articles(self, date=None, limit=None):
         clauses = ["COALESCE(is_analyzed, 0) = 0", "(COALESCE(body, '') != '' OR COALESCE(summary, '') != '')"]
@@ -260,8 +289,7 @@ class ReportDatabase:
                 """
                 INSERT INTO article_embeddings (article_id, model_name, embedding_json, created_at)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(article_id) DO UPDATE SET
-                    model_name = excluded.model_name,
+                ON CONFLICT(article_id, model_name) DO UPDATE SET
                     embedding_json = excluded.embedding_json,
                     created_at = excluded.created_at
                 """,
@@ -361,8 +389,8 @@ class ReportDatabase:
                 (article["id"], normalized),
             ).fetchone()
             if exists:
-                return
-            conn.execute(
+                return False
+            cur = conn.execute(
                 """
                 INSERT OR IGNORE INTO exclusive_claims (
                     category, claim_text, normalized_claim, embedding_json,
@@ -383,6 +411,7 @@ class ReportDatabase:
                 ),
             )
             conn.commit()
+            return cur.rowcount > 0
 
     def claims_for_category(self, category, limit=200):
         with self.connect() as conn:
@@ -451,7 +480,7 @@ class Embedder:
 
     @property
     def cache_name(self):
-        return self.model_name if self.backend != "lexical" else "lexical-hash-v1"
+        return self.model_name if self.backend != "lexical" else "lexical-stable-v2"
 
 
 def parse_args():
@@ -461,12 +490,14 @@ def parse_args():
     parser.add_argument("--to", dest="date_to", help="End date YYYYMMDD for seeding/backfill.")
     parser.add_argument("--seed-exclusive", action="store_true", help="Build the exclusive-claim comparison DB.")
     parser.add_argument("--backfill-source", action="store_true", help="Crawl list pages for --from to --to before seeding.")
+    parser.add_argument("--preflight", action="store_true", help="Check dependencies, DB schema, and API-key readiness.")
     parser.add_argument("--classify-uncertain", action="store_true", help="Ask category for ambiguous articles in terminal.")
     parser.add_argument("--suggest-categories", action="store_true", help="Suggest categories for uncategorized articles.")
     parser.add_argument("--all-articles", action="store_true", help="Include articles outside monitor keywords.")
     parser.add_argument("--limit", type=int, help="Limit pending articles for test runs.")
     parser.add_argument("--output-file", action="store_true", help="Save markdown report under the app reports folder.")
     parser.add_argument("--no-llm", action="store_true", help="Do not call Gemini; render candidate summaries only.")
+    parser.add_argument("--gemini-model", default=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
     parser.add_argument("--embedding-backend", choices=["auto", "sentence", "lexical"], default="auto")
     parser.add_argument("--similarity-threshold", type=float, default=SIMILARITY_THRESHOLD)
     parser.add_argument("--exclusive-threshold", type=float, default=EXCLUSIVE_THRESHOLD)
@@ -478,6 +509,10 @@ def main():
     if args.date == "today":
         args.date = datetime.now().strftime("%Y%m%d")
     db = ReportDatabase()
+
+    if args.preflight:
+        run_preflight(db, args)
+        return
 
     if args.backfill_source:
         require_range(args)
@@ -499,6 +534,40 @@ def main():
 def require_range(args):
     if not args.date_from or not args.date_to:
         raise SystemExit("--from and --to are required for this command.")
+
+
+def run_preflight(db, args):
+    checks = []
+    checks.append(("SQLite DB", Path(db.path).exists(), db.path))
+    with db.connect() as conn:
+        for table in [
+            "articles",
+            "exclusive_claims",
+            "article_embeddings",
+            "article_analysis",
+            "category_baselines",
+            "report_runs",
+        ]:
+            try:
+                count = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                checks.append((f"table:{table}", True, str(count)))
+            except Exception as exc:
+                checks.append((f"table:{table}", False, str(exc)))
+    for module_name in ["google.genai", "kss", "numpy"]:
+        try:
+            __import__(module_name)
+            checks.append((f"module:{module_name}", True, "installed"))
+        except Exception as exc:
+            checks.append((f"module:{module_name}", False, str(exc)))
+    try:
+        __import__("sentence_transformers")
+        checks.append(("module:sentence_transformers", True, "installed"))
+    except Exception:
+        checks.append(("module:sentence_transformers", True, "not installed; lexical fallback will be used"))
+    checks.append(("Gemini API key", bool(gemini_api_key()), "configured" if gemini_api_key() else "missing"))
+    for name, ok, detail in checks:
+        status = "OK" if ok else "FAIL"
+        print(f"[{status}] {name}: {detail}")
 
 
 def backfill_source(date_from, date_to):
@@ -599,8 +668,8 @@ def seed_exclusive_claims(db, args):
             vector = embedder.encode(sentence)
             if is_duplicate_claim(db, category, vector, args.exclusive_threshold):
                 continue
-            db.save_claim(sentence, category, row, vector)
-            count += 1
+            if db.save_claim(sentence, category, row, vector):
+                count += 1
     return count
 
 
@@ -609,7 +678,10 @@ def generate_report(db, args):
     if not args.all_articles:
         rows = [row for row in rows if matches_monitor_keywords(row)]
     if not rows:
-        return f"# 아침 보고서 - {args.date}\n\n새로 분석할 기사가 없습니다.\n"
+        report = f"# 아침 보고서 - {args.date}\n\n새로 분석할 기사가 없습니다.\n"
+        output_path = write_report_file(args.date, report) if args.output_file else None
+        db.save_report_run(args.date, output_path, [], report)
+        return report
 
     embedder = Embedder(backend=args.embedding_backend)
     skipped = []
@@ -648,7 +720,19 @@ def generate_report(db, args):
                     mark_analyzed=False,
                 )
             continue
-        result = analyze_with_gemini(db, category, category_rows)
+        try:
+            result = analyze_with_gemini(db, category, category_rows, args.gemini_model)
+        except Exception as exc:
+            for row in category_rows:
+                db.save_analysis(
+                    row["id"],
+                    category,
+                    "failed",
+                    error=str(exc),
+                    mark_analyzed=False,
+                )
+            skipped.extend((row, f"llm_failed: {exc}", None, None) for row in category_rows)
+            continue
         db.save_baseline(category, result.get("updated_baseline_md") or db.baseline(category))
         by_id = {int(item["article_id"]): item for item in result.get("items", []) if item.get("article_id")}
         for row in category_rows:
@@ -685,31 +769,43 @@ def generate_report(db, args):
     report = render_report(args.date, report_items, skipped)
     output_path = None
     if args.output_file:
-        REPORT_DIR.mkdir(parents=True, exist_ok=True)
-        output = REPORT_DIR / f"{args.date}_morning_report.md"
-        output.write_text(report, encoding="utf-8")
-        output_path = str(output)
-        print(f"saved: {output_path}")
+        output_path = write_report_file(args.date, report)
     db.save_report_run(args.date, output_path, [row["id"] for row in rows], report)
     return report
 
 
-def analyze_with_gemini(db, category, rows):
+def write_report_file(report_date, report):
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    output = REPORT_DIR / f"{report_date}_morning_report.md"
+    output.write_text(report, encoding="utf-8")
+    output_path = str(output)
+    print(f"saved: {output_path}")
+    return output_path
+
+
+def analyze_with_gemini(db, category, rows, model_name):
     api_key = gemini_api_key()
     if not api_key:
         raise SystemExit("Gemini API key not found. Save it in GUI config or set GEMINI_API_KEY.")
-    try:
-        import google.generativeai as genai
-    except ImportError as exc:
-        raise SystemExit(
-            "google-generativeai is not installed. Run: "
-            "venv\\Scripts\\python.exe -m pip install -r requirements-report.txt"
-        ) from exc
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
     prompt = build_prompt(db, category, rows)
-    response = model.generate_content(prompt)
-    text = getattr(response, "text", "") or ""
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(model=model_name, contents=prompt)
+        text = getattr(response, "text", "") or ""
+    except ImportError:
+        try:
+            import google.generativeai as old_genai
+        except ImportError as exc:
+            raise SystemExit(
+                "google-genai is not installed. Run: "
+                "venv\\Scripts\\python.exe -m pip install -r requirements-report.txt"
+            ) from exc
+        old_genai.configure(api_key=api_key)
+        model = old_genai.GenerativeModel(model_name)
+        response = model.generate_content(prompt)
+        text = getattr(response, "text", "") or ""
     return parse_json_response(text)
 
 
@@ -867,7 +963,10 @@ def split_sentences(text, prefer_kss=False):
             return [sentence.strip() for sentence in kss.split_sentences(text) if sentence.strip()]
         except ImportError:
             pass
-    parts = re.split(r"(?<=[.!?。])\s+|(?<=[다요죠함음임됨됨])\.\s+|(?<=다)\s+|(?<=요)\s+", text)
+    parts = re.split(
+        r"(?<=[.!?。])\s+|(?<=[.!?。])(?=[가-힣A-Za-z0-9\"'“‘])|(?<=다)\s+|(?<=요)\s+",
+        text,
+    )
     sentences = []
     for part in parts:
         part = part.strip()
@@ -905,7 +1004,8 @@ def lexical_vector(text, dimensions=1024):
     tokens = re.findall(r"[가-힣A-Za-z0-9]{2,}", text or "")
     for token in tokens:
         token = token.lower()
-        index = hash(token) % dimensions
+        digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+        index = int.from_bytes(digest, "big") % dimensions
         vector[index] += 1.0
     norm = math.sqrt(sum(value * value for value in vector))
     if not norm:

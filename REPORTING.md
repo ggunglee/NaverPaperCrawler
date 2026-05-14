@@ -8,6 +8,18 @@ Install the lightweight report dependencies:
 venv\Scripts\python.exe -m pip install -r requirements-report.txt
 ```
 
+Run a preflight check before the first report:
+
+```bat
+venv\Scripts\python.exe report_generator.py --preflight
+```
+
+Gemini API keys are read in this order:
+
+1. `gemini_api_key` in `%USERPROFILE%\.naver_news_crawler\config.json`
+2. `GEMINI_API_KEY` or `GOOGLE_API_KEY` in `.env`
+3. `GEMINI_API_KEY` or `GOOGLE_API_KEY` from the process environment
+
 Optional: install SentenceTransformers for stronger semantic similarity. If this is not installed, the script falls back to a local lexical embedding backend.
 
 ```bat
@@ -25,6 +37,12 @@ Generate a morning report:
 
 ```bat
 venv\Scripts\python.exe report_generator.py --date today --output-file
+```
+
+For a smoke test that does not call Gemini:
+
+```bat
+venv\Scripts\python.exe report_generator.py --date today --no-llm --embedding-backend lexical --output-file
 ```
 
 Suggest or manually assign issue categories:
