@@ -4,13 +4,9 @@ import sys
 import traceback
 from datetime import datetime
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
-
 from config import LOG_PATH, ensure_app_dirs, load_body_keywords, save_body_keywords, setup_logging
 from crawler import NaverPaperCrawler
 from database import Database
-from gui import KeywordBodyDialog, run_gui
 from online_crawler import crawl_online_candidates
 from rss_crawler import RssCrawler
 from scheduler import install_scheduled_tasks, uninstall_scheduled_tasks
@@ -68,6 +64,11 @@ def crawl_online_only():
 
 
 def crawl_today_with_prompt():
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
+
+    from gui import KeywordBodyDialog
+
     app = QApplication(sys.argv)
     answer = QMessageBox.question(
         None,
@@ -175,10 +176,14 @@ def main():
             return crawl_list_only(args.crawl_date)
         if args.no_gui:
             return 0
+        from gui import run_gui
+
         return run_gui()
     except Exception:
         logging.exception("Fatal error")
         if not args.no_gui:
+            from PySide6.QtWidgets import QApplication, QMessageBox
+
             app = QApplication.instance() or QApplication(sys.argv)
             QMessageBox.critical(None, "치명적 오류", f"프로그램 오류가 발생했습니다.\n\n상세 로그: {LOG_PATH}")
             app.quit()
