@@ -235,6 +235,7 @@ class NaverPaperCrawler:
         if article["body"] and not force:
             return article["body"]
         body = self.fetch_article_body(article["url"])
+        body = self._cleanup_article_body(body, article["title"], article["newspaper"])
         if body:
             self.db.update_body(article_id, body)
         return body
@@ -258,3 +259,52 @@ class NaverPaperCrawler:
                 compact.append(line)
                 blank = False
         return "\n".join(compact).strip()
+
+    @staticmethod
+    def _cleanup_article_body(text: str, title: str = "", newspaper: str = "") -> str:
+        title_norm = re.sub(r"[\W_]+", "", title or "")
+        cleaned = []
+        for raw_line in (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+            line = re.sub(r"\s+", " ", raw_line).strip()
+            if not line:
+                continue
+            line_norm = re.sub(r"[\W_]+", "", line)
+            if title_norm and (line_norm == title_norm or (len(line_norm) < 80 and line_norm in title_norm)):
+                continue
+            if re.fullmatch(r"(정치|사회|경제|문화|국제|전국|전체)", line):
+                continue
+            if re.fullmatch(r"(등록|수정)?\s*:?\s*\d{4}\.\d{2}\.\d{2}\s+(오전|오후)\s+\d{1,2}:\d{2}", line):
+                continue
+            if re.fullmatch(r"\d{2}\.\d{2}\s+(오전|오후)\s+\d{1,2}:\d{2}", line):
+                continue
+            if re.fullmatch(r"[가-힣]{2,5}\s*(선임|인턴|수습)?기자", line):
+                continue
+            if re.match(r"^[가-힣]{2,5}\s*(선임|인턴|수습)?기자\s*[=:]", line):
+                continue
+            if re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+", line):
+                continue
+            noise_terms = [
+                "인공지능이 자동으로",
+                "세 줄 요약",
+                "전체 내용을 이해하기",
+                "무단전재",
+                "재배포 금지",
+                "저작권자",
+                "제보는 카카오톡",
+                "뉴스 제보",
+                "사진=",
+                "자료사진",
+                "연합뉴스",
+                "뉴스1",
+                "뉴시스",
+                "게티이미지",
+                "본문의 이해를 돕기",
+                "많이 본 뉴스",
+                "구독",
+                "좋아요",
+                "댓글",
+            ]
+            if any(term in line for term in noise_terms):
+                continue
+            cleaned.append(line)
+        return "\n".join(cleaned).strip()

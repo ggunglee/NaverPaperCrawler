@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument("--crawl-date", help="Crawl list for YYYYMMDD.")
     parser.add_argument("--crawl-rss", action="store_true", help="Crawl configured RSS feeds.")
     parser.add_argument("--crawl-online", action="store_true", help="Crawl RSS feeds and monitored Naver API keywords.")
+    parser.add_argument("--run-morning-report", action="store_true", help="Run morning report crawl/generate/send flow.")
     parser.add_argument("--install-scheduler", action="store_true", help="Register Windows Task Scheduler jobs.")
     parser.add_argument("--uninstall-scheduler", action="store_true", help="Remove Windows Task Scheduler jobs.")
     parser.add_argument("--no-gui", action="store_true", help="Run without main GUI.")
@@ -135,8 +136,7 @@ def crawl_today_with_prompt():
 def install_scheduler_cli():
     install_scheduled_tasks()
     print("registered scheduled tasks:")
-    print("- NaverPaperCrawler_DailyPaperPrompt: daily 05:50, prompt paper crawl")
-    print("- NaverPaperCrawler_OnlineEvery3Hours: daily 05:50, repeat every 3 hours, online crawl")
+    print("- NaverPaperCrawler_MorningReportTelegram: daily 06:00, crawl/generate/send Telegram morning report")
     return 0
 
 
@@ -145,6 +145,7 @@ def uninstall_scheduler_cli():
     print("removed scheduled tasks:")
     print("- NaverPaperCrawler_DailyPaperPrompt")
     print("- NaverPaperCrawler_OnlineEvery3Hours")
+    print("- NaverPaperCrawler_MorningReportTelegram")
     return 0
 
 
@@ -159,6 +160,11 @@ def main():
             return install_scheduler_cli()
         if args.uninstall_scheduler:
             return uninstall_scheduler_cli()
+        if args.run_morning_report:
+            from morning_report_task import main as morning_report_main
+
+            sys.argv = [sys.argv[0], "--date", "today", "--send-telegram", "--force", "--no-llm"]
+            return morning_report_main()
         if args.crawl_online:
             return crawl_online_only()
         if args.crawl_rss:

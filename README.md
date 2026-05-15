@@ -56,10 +56,9 @@ NaverPaperCrawler.exe --crawl-online --no-gui
 
 ## Windows 작업 스케줄러 설정 예시
 
-배포 폴더의 `install_scheduler.bat`를 실행하면 현재 EXE 경로로 아래 작업이 자동 등록됩니다.
+배포 폴더의 `install_scheduler.bat`를 실행하면 현재 EXE 또는 로컬 Python 환경 기준으로 아래 작업이 자동 등록됩니다.
 
-- `NaverPaperCrawler_DailyPaperPrompt`: 매일 오전 5시 50분, 지면 기사 수집 확인 팝업
-- `NaverPaperCrawler_OnlineEvery3Hours`: 매일 오전 5시 50분 시작, 3시간마다 온라인 후보 수집
+- `NaverPaperCrawler_MorningReportTelegram`: 매일 오전 6시, 당일 지면 기사와 전날 오후 6시부터 당일 오전 6시까지의 온라인 기사를 수집해 아침보고를 텔레그램으로 발송
 
 작업은 `예약된 시작 시간을 놓친 경우 가능한 빨리 작업 시작` 설정으로 등록됩니다. 제거하려면 배포 폴더의 `uninstall_scheduler.bat`를 실행합니다.
 

@@ -1,6 +1,7 @@
 import csv
 import logging
 import os
+import re
 import sys
 import tempfile
 import traceback
@@ -60,6 +61,23 @@ def format_display_time(value):
         return datetime.fromisoformat(value).strftime("%m-%d %H:%M")
     except Exception:
         return str(value)
+
+
+def section_sort_key(value):
+    text = value or ""
+    match = re.search(r"(\d+)", text)
+    if match:
+        return int(match.group(1)), text
+    return 9999, text
+
+
+class SortableItem(QStandardItem):
+    def __lt__(self, other):
+        left = self.data(Qt.UserRole)
+        right = other.data(Qt.UserRole) if other else None
+        if left is not None and right is not None:
+            return left < right
+        return super().__lt__(other)
 
 
 APP_STYLESHEET = """
@@ -411,10 +429,12 @@ class MainWindow(QMainWindow):
         filters = QGridLayout()
         self.start_date_edit = QDateEdit()
         self.start_date_edit.setCalendarPopup(True)
+        self.start_date_edit.setKeyboardTracking(False)
         self.start_date_edit.setDisplayFormat("yyyyMMdd")
         self.start_date_edit.setDateTime(self.start_date_edit.dateTime().currentDateTime())
         self.end_date_edit = QDateEdit()
         self.end_date_edit.setCalendarPopup(True)
+        self.end_date_edit.setKeyboardTracking(False)
         self.end_date_edit.setDisplayFormat("yyyyMMdd")
         self.end_date_edit.setDateTime(self.end_date_edit.dateTime().currentDateTime())
         self.date_edit = self.start_date_edit
@@ -479,14 +499,13 @@ class MainWindow(QMainWindow):
         self.article_type_combo.currentTextChanged.connect(self.handle_article_type_changed)
         self.section_combo.lineEdit().returnPressed.connect(self.search_with_auto_crawl)
         self.newspaper_combo.lineEdit().returnPressed.connect(self.search_with_auto_crawl)
-        self.start_date_edit.editingFinished.connect(self.search_with_auto_crawl)
-        self.end_date_edit.editingFinished.connect(self.search_with_auto_crawl)
 
         splitter = QSplitter(Qt.Vertical)
         self.table = QTableView()
         self.model = QStandardItemModel(0, len(self.HEADERS))
         self.model.setHorizontalHeaderLabels(self.HEADERS)
         self.table.setModel(self.model)
+        self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setSelectionMode(QTableView.ExtendedSelection)
         self.table.setAlternatingRowColors(True)
@@ -496,6 +515,7 @@ class MainWindow(QMainWindow):
         self.table.setColumnHidden(0, True)
         self.table.setColumnWidth(6, 420)
         self.table.setColumnWidth(7, 360)
+        self.table.sortByColumn(1, Qt.DescendingOrder)
         splitter.addWidget(self.table)
 
         detail_widget = QWidget()
@@ -686,6 +706,7 @@ class MainWindow(QMainWindow):
         return dates
 
     def show_rows(self, rows):
+        self.table.setSortingEnabled(False)
         self.current_rows = rows
         self.model.setRowCount(0)
         for row in rows:
@@ -699,10 +720,25 @@ class MainWindow(QMainWindow):
                 row["title"],
                 row["url"],
             ]
-            model_items = [QStandardItem(value) for value in items]
+            sort_values = [
+                int(row["id"]),
+                row["date"] or "",
+                row["article_type"] or "",
+                row["newspaper"] or "",
+                section_sort_key(row["paper_section"]),
+                row["published_at"] or "",
+                row["title"] or "",
+                row["url"] or "",
+            ]
+            model_items = []
+            for value, sort_value in zip(items, sort_values):
+                item = SortableItem(value)
+                item.setData(sort_value, Qt.UserRole)
+                model_items.append(item)
             for item in model_items:
                 item.setEditable(False)
             self.model.appendRow(model_items)
+        self.table.setSortingEnabled(True)
         self.table.resizeRowsToContents()
 
     def selected_article_ids(self):
