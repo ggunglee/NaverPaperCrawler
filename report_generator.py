@@ -766,18 +766,26 @@ def run_preflight(db, args):
                 checks.append((f"table:{table}", True, str(count)))
             except Exception as exc:
                 checks.append((f"table:{table}", False, str(exc)))
-    for module_name in ["google.genai", "kss", "numpy"]:
+    optional_modules = {
+        "google.genai": "optional; needed only for Gemini LLM runs",
+        "kss": "optional; built-in sentence splitter is used when missing",
+        "numpy": "optional; lexical embedding backend works without it",
+    }
+    for module_name, missing_detail in optional_modules.items():
         try:
             __import__(module_name)
             checks.append((f"module:{module_name}", True, "installed"))
-        except Exception as exc:
-            checks.append((f"module:{module_name}", False, str(exc)))
+        except Exception:
+            checks.append((f"module:{module_name}", True, missing_detail))
     try:
         __import__("sentence_transformers")
         checks.append(("module:sentence_transformers", True, "installed"))
     except Exception:
         checks.append(("module:sentence_transformers", True, "not installed; lexical fallback will be used"))
-    checks.append(("Gemini API key", bool(gemini_api_key()), "configured" if gemini_api_key() else "missing"))
+    if args.no_llm:
+        checks.append(("Gemini API key", True, "not required for --no-llm"))
+    else:
+        checks.append(("Gemini API key", bool(gemini_api_key()), "configured" if gemini_api_key() else "missing"))
     if args.llm_backend == "ollama":
         ok, detail = ollama_status(args.ollama_url)
         checks.append(("Ollama server", ok, detail))
