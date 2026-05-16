@@ -1814,6 +1814,8 @@ def lexical_vector(text, dimensions=1024):
 
 
 def render_report(report_date, items, skipped):
+    hidden_reasons = {"same_event_duplicate", "lifestyle_legal_advice"}
+    skipped = [item for item in skipped if item[1] not in hidden_reasons]
     lines = []
     if not items:
         lines.append("[보고 기사]")

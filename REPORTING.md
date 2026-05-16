@@ -71,6 +71,7 @@ Exclude from selected report items:
 - Legal-advice/lifestyle items such as radio 상담소, 사연자, 생활법률, 상간녀/상간남 상담 stories.
 
 Foreign incident articles sourced mainly from overseas media are outside the user's interest and should be dropped silently, not shown in skipped candidates.
+Legal-advice/lifestyle items and exact same-event duplicates are also dropped silently from the Telegram report.
 
 Excluded keyword candidates should still be visible in the report diagnostics.
 
