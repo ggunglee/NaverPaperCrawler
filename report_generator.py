@@ -2079,6 +2079,7 @@ def format_section(section):
 def normalize_report_tone(text):
     text = re.sub(r"\s+", " ", text or "").strip()
     text = re.sub(r"(?<=\d)\.\s+(?=\d)", ".", text)
+    text = re.sub(r"지만\.\s+(?=[가-힣'\"“])", "지만, ", text)
     text = re.sub(r"([가-힣]{2,})(?:했|하였)죠\.?", r"\1.", text)
     text = re.sub(r"([가-힣]{2,})됐죠\.?", r"\1됨.", text)
     text = re.sub(r"([가-힣]{2,})었죠\.?", r"\1었음.", text)

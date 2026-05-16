@@ -34,6 +34,10 @@ POLITE_ENDINGS = [
     "였습니다",
 ]
 
+AWKWARD_FRAGMENTS = [
+    "지만.",
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="QA a generated morning report Markdown file.")
@@ -92,6 +96,9 @@ def qa_report(path, min_selected=1, max_selected=30):
         for term in POLITE_ENDINGS:
             if term in body:
                 warnings.append(f"polite ending '{term}' in block {index}: {headline}")
+        for term in AWKWARD_FRAGMENTS:
+            if term in body:
+                warnings.append(f"awkward fragment '{term}' in block {index}: {headline}")
 
     return {
         "report_path": str(path),

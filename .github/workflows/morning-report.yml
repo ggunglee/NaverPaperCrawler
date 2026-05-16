@@ -2,6 +2,15 @@ name: Morning Report
 
 on:
   workflow_dispatch:
+    inputs:
+      send_telegram:
+        description: "Send the generated report to Telegram"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
   schedule:
     # GitHub cron uses UTC. 21:07 UTC is 06:07 KST.
     # A few minutes after the hour avoids the busiest scheduler minute.
@@ -31,9 +40,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-report.txt
 
-      - name: Generate and send Telegram morning report
+      - name: Generate morning report
         run: |
-          python morning_report_task.py --date today --send-telegram --force --no-llm
+          SEND_FLAG="--send-telegram"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_telegram }}" = "false" ]; then
+            SEND_FLAG=""
+          fi
+          python morning_report_task.py --date today $SEND_FLAG --force --no-llm
 
       - name: Summarize generated report
         if: always()
