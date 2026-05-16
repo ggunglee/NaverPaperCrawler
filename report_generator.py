@@ -1816,15 +1816,22 @@ def lexical_vector(text, dimensions=1024):
 def render_report(report_date, items, skipped):
     lines = []
     if not items:
+        lines.append("[보고 기사]")
+        lines.append("")
         lines.append("새로 보고할 기사가 없음.")
         lines.append("")
-    for item in items:
-        lines.append(f"※{item['headline']}")
-        lines.append(f"-{normalize_report_tone(item['summary']).lstrip('-').strip()}")
-        lines.append(item["url"])
+    else:
+        lines.append("[보고 기사]")
         lines.append("")
+        for item in items:
+            lines.append(f"※{item['headline']}")
+            lines.append(f"-{normalize_report_tone(item['summary']).lstrip('-').strip()}")
+            lines.append(item["url"])
+            lines.append("")
 
     if skipped:
+        lines.append("[보류/제외 기사]")
+        lines.append("")
         similarity_rows = [
             item
             for item in skipped
