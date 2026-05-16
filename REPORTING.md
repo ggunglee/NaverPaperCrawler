@@ -9,6 +9,8 @@ venv\Scripts\python.exe morning_report_task.py --date today --send-telegram --fo
 ```
 
 GitHub Actions runs the initial report every day at 06:07 KST. A second online-only follow-up run checks 06:00-07:50 articles at 07:55 KST.
+Runtime SQLite data is restored and saved with GitHub Actions cache. It is pruned to the latest 30 days after each scheduled run.
+Old runtime cache entries are also pruned so only the five newest `naver-news-runtime-` caches remain.
 
 ## Scope
 
@@ -17,6 +19,8 @@ GitHub Actions runs the initial report every day at 06:07 KST. A second online-o
 - Online follow-up articles: report date 06:00 through 07:50, online-only.
 - Output path: `%USERPROFILE%\.naver_news_crawler\reports\YYYYMMDD_morning_report.md`.
 - Delivery: Telegram.
+- Runtime cache path: `%USERPROFILE%\.naver_news_crawler`.
+- Retention: 30 days for articles, embeddings, exclusive claims, report runs, feedback DB rows, report files, and feedback JSON files.
 
 The crawler must collect articles first. LLMs, if ever enabled manually, are only for downstream selection/summarization. They should not replace clean crawling.
 
@@ -213,6 +217,12 @@ Collect Telegram feedback commands:
 
 ```bat
 venv\Scripts\python.exe telegram_feedback.py
+```
+
+Prune runtime DB/cache data:
+
+```bat
+venv\Scripts\python.exe cleanup_runtime_data.py --days 30
 ```
 
 Feedback command formats:
