@@ -1,329 +1,304 @@
-# Other PC Handoff
+# NaverPaperCrawler Handoff
 
-This repository contains the Naver paper crawler, online candidate collector, and legal morning report sender.
+Last updated: 2026-05-17 KST
 
-Do not commit `.env`, SQLite DB files, `dist/`, `build/`, virtual environments, generated reports, or release zip files.
+This repo now runs the legal morning report primarily through GitHub Actions, not a local Windows scheduler.
 
-## Current Operating Goal
+## Repository
 
-Every day at 06:00 on a Windows PC that is powered on and logged in, the app should:
+- GitHub: `https://github.com/ggunglee/NaverPaperCrawler`
+- Branch: `main`
+- Latest verified operating commit before this doc-only handoff: `0314e58 Fix runtime cache workflow permissions`
+- This handoff document itself is expected to be committed after that operating commit.
 
-1. Crawl the report date's Naver newspaper-page articles.
-2. Crawl online candidate articles published from the previous day 18:00 through the report date 06:00.
-3. Fetch and clean article bodies before analysis.
-4. Select Korean legal-desk candidates using the configured legal keywords.
-5. Generate a morning-report Markdown file.
-6. Include both selected report items and skipped candidate articles with exclusion reasons.
-7. Send the report to Telegram.
-
-The scheduled production command is:
-
-```powershell
-.\venv\Scripts\python.exe morning_report_task.py --date today --send-telegram --force --no-llm
-```
-
-`--no-llm` is intentional for the scheduled job. The current stable operating path uses deterministic extractive summaries and rule-based filtering rather than Gemini or Ollama.
-
-## Current Git State
-
-- Remote: `https://github.com/ggunglee/NaverPaperCrawler`
-- Main branch: `main`
-- Work completed on 2026-05-15:
-  - Morning Telegram automation.
-  - Legal-desk morning scope: report-date paper plus previous-day 18:00 to report-day 06:00 online articles.
-  - Body cleanup before storing fetched article text.
-  - Report wording normalization to the user's morning-report style.
-  - Skipped candidate section in the delivered report.
-  - Same-event duplicate preference: exclusive or earlier article wins.
-  - Police-led articles excluded from final legal report, but keyword candidates can still appear in skipped candidates with a reason.
-  - GUI table sorting for date, newspaper, section/page, published time, title, and URL.
-  - Windows Task Scheduler job consolidated to one 06:00 Telegram morning-report task.
-
-## Runtime Files To Move Separately
-
-Use GitHub for code:
+On another computer:
 
 ```powershell
 git clone https://github.com/ggunglee/NaverPaperCrawler.git
 cd NaverPaperCrawler
+git pull origin main
 ```
 
-Move these local runtime files separately if exact continuity is needed:
-
-- `.env`
-- SQLite DB directory: `%USERPROFILE%\.naver_news_crawler\data\`
-- Existing generated reports: `%USERPROFILE%\.naver_news_crawler\reports\`
-
-The SQLite DB contains crawl history and analysis state. The code can run without copying old reports, but copying the DB preserves previous articles and duplicate-comparison context.
-
-## Required `.env`
-
-Create `.env` at the repository root. Do not commit it.
-
-Minimum for Telegram operation:
-
-```dotenv
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-```
-
-For online candidate discovery using the Naver API:
-
-```dotenv
-NAVER_CLIENT_ID=...
-NAVER_CLIENT_SECRET=...
-```
-
-LLM keys are optional for the current scheduled no-LLM workflow:
-
-```dotenv
-GEMINI_API_KEY=...
-REPORT_LLM_BACKEND=ollama
-OLLAMA_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=exaone3.5:2.4b
-```
-
-Notes:
-
-- The user previously used `GEMINI_API_KEY`.
-- Ollama was tested as an optional local summarization backend, but the scheduled job now uses `--no-llm` because the deterministic report path was more stable for the required format.
-- Never paste real API keys into GitHub, commits, issue comments, or handoff docs.
-
-## Setup On Another Windows PC
-
-Create and activate a virtual environment:
+If the repo already exists:
 
 ```powershell
-py -m venv venv
-.\venv\Scripts\python.exe -m pip install --upgrade pip
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe -m pip install -r requirements-report.txt
+cd path\to\NaverPaperCrawler
+git pull origin main
 ```
 
-Optional semantic-similarity dependency:
+## Operating Model
+
+The production path is deterministic no-LLM reporting.
+
+Do not assume Gemini or Ollama is needed for the scheduled job. The scheduled job uses:
 
 ```powershell
-.\venv\Scripts\python.exe -m pip install -r requirements-report-sentence.txt
+python morning_report_task.py --date today --no-llm
 ```
 
-The deterministic fallback uses lexical embeddings, so sentence-transformers is not required for operation.
+The GitHub workflow adds the relevant mode and Telegram flags.
 
-## Validation Commands
+## GitHub Actions Schedule
 
-Check readiness:
+### Morning Report
+
+Workflow: `.github/workflows/morning-report.yml`
+
+Schedules:
+
+- `06:07 KST`: initial report
+  - GitHub cron: `7 21 * * *`
+  - Includes report-date paper articles.
+  - Includes online articles from previous day 18:00 through report date 06:00.
+  - Sends Telegram report.
+
+- `07:55 KST`: online-only follow-up
+  - GitHub cron: `55 22 * * *`
+  - Checks online articles from 06:00 through 07:50.
+  - Sends `[추가 보고]` only if new report-worthy items exist.
+  - Sends a separate feedback guide message after the follow-up run.
+
+Manual dry-run without Telegram:
 
 ```powershell
-.\venv\Scripts\python.exe report_generator.py --preflight --embedding-backend lexical
+gh workflow run morning-report.yml --repo ggunglee/NaverPaperCrawler --ref main -f send_telegram=false -f mode=initial
+gh workflow run morning-report.yml --repo ggunglee/NaverPaperCrawler --ref main -f send_telegram=false -f mode=update
 ```
 
-Run a no-send morning-report smoke test:
+Manual run with Telegram:
 
 ```powershell
-.\venv\Scripts\python.exe morning_report_task.py --date today --force --no-llm
+gh workflow run morning-report.yml --repo ggunglee/NaverPaperCrawler --ref main -f send_telegram=true -f mode=initial
 ```
 
-Run for a fixed historical date without crawling:
+### Telegram Feedback
+
+Workflow: `.github/workflows/telegram-feedback.yml`
+
+Schedule:
+
+- `12:00 KST`
+  - GitHub cron: `0 3 * * *`
+  - Collects feedback commands from Telegram.
+  - Stores collected messages in SQLite and JSON artifacts.
+
+Manual run:
 
 ```powershell
-.\venv\Scripts\python.exe morning_report_task.py --date 20260515 --force --no-crawl --no-llm
+gh workflow run telegram-feedback.yml --repo ggunglee/NaverPaperCrawler --ref main
 ```
 
-Expected output path:
+## Required GitHub Secrets
+
+Already expected:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+Recommended for broader online discovery:
+
+- `NAVER_CLIENT_ID`
+- `NAVER_CLIENT_SECRET`
+
+Currently optional:
+
+- `GEMINI_API_KEY`
+- `OLLAMA_URL`
+
+The scheduled production path is `--no-llm`, so Gemini/Ollama are not required.
+
+## Google Drive Secrets, If Added Later
+
+Runtime cache currently uses GitHub Actions cache, not Google Drive.
+
+If GitHub should directly back up DB/feedback files to Google Drive, add:
+
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+  - Full Google Cloud service-account key JSON.
+  - Put it in GitHub Secrets, not in a committed file.
+
+- `GOOGLE_DRIVE_FOLDER_ID`
+  - Folder ID from a Drive folder URL.
+  - Share that folder with the service account email.
+
+Optional:
+
+- `GOOGLE_DRIVE_DB_FILE_ID`
+  - Use only if one existing DB file should be overwritten every run.
+
+- `GOOGLE_DRIVE_QA_DOC_ID`
+  - Use only if GitHub Actions should write directly to a Google Doc.
+
+Current QA log doc used manually through the Google Drive connector:
 
 ```text
-%USERPROFILE%\.naver_news_crawler\reports\YYYYMMDD_morning_report.md
+https://docs.google.com/document/d/1k2BSnYBZfgat311DaHSxLml_mvXTvVeeHZ3CrjZ-BtQ
 ```
 
-Send to Telegram after inspecting the Markdown:
+## Runtime Persistence
 
-```powershell
-.\venv\Scripts\python.exe morning_report_task.py --date today --force --no-llm --send-telegram
-```
+GitHub runners are ephemeral. The repo now persists runtime state using GitHub Actions cache:
 
-Register the Windows scheduled task:
+- Cache path: `~/.naver_news_crawler`
+- Cache key prefix: `naver-news-runtime-`
+- Restored with `restore-keys: naver-news-runtime-`
 
-```powershell
-.\venv\Scripts\python.exe main.py --install-scheduler --no-gui
-```
+The cache contains:
 
-Verify registration:
+- `data/naver_paper_articles.db`
+- article history
+- `article_embeddings`
+- `exclusive_claims`
+- `article_analysis`
+- `report_runs`
+- `telegram_feedback.db`
+- generated reports and feedback JSONs
 
-```powershell
-schtasks /Query /TN NaverPaperCrawler_MorningReportTelegram /FO LIST /V
-```
+Cleanup:
 
-The expected task command is:
+- `cleanup_runtime_data.py --days 30`
+- Keeps only the latest 30 days of runtime DB rows and report/feedback files.
+- Workflows also prune old runtime cache entries, keeping the 5 newest `naver-news-runtime-` caches.
+
+Important: artifacts are for inspection, not persistence. The runtime cache is the persistence layer.
+
+## Verified GitHub Runs
+
+These runs were verified on GitHub before handoff:
+
+- `25967639973`: morning-report initial dry-run
+  - Success.
+  - Runtime cache saved.
+  - QA pass.
+
+- `25967673574`: morning-report update dry-run
+  - Success.
+  - Restored runtime cache from `naver-news-runtime-25967639973`.
+  - `online_inserted=0` after restoring cache, confirming duplicate persistence worked.
+  - QA warn only because there were zero selected update items.
+
+- `25967703425`: telegram-feedback dry-run
+  - Success.
+  - Restored runtime cache from `naver-news-runtime-25967673574`.
+  - `updates_seen=0`, `feedback_collected=0`.
+  - `telegram_feedback.db` existed and was pruned successfully.
+
+One failed run was intentionally diagnosed and fixed:
+
+- `25967597800`
+  - Failed because the default GitHub token lacked Actions cache permissions and cleanup imported `report_generator` before dependencies were installed.
+  - Fixed by adding workflow permissions and making cleanup dependency-light.
+
+## Report Rules
+
+Current important editorial rules:
+
+- Foreign/overseas incident stories sourced from overseas media are silently excluded.
+- 생활법률, 상담소, 사연자, radio advice style items are silently excluded.
+- Exact same-event duplicates are silently excluded from Telegram.
+- Same-event priority:
+  - first: `단독`
+  - second: `연합뉴스`
+  - then other outlets
+- Polling stories stay if the legal issue is substantive.
+- Campaign diary items such as 선거사무소, 개소식, 출정식 are excluded.
+- Political-rhetorical attack items are excluded when legal words are only rhetoric.
+- Important straight legal stories should be included when uncertain rather than over-filtered.
+
+Report format:
 
 ```text
-...\venv\Scripts\python.exe "...NaverPaperCrawler\morning_report_task.py" --date today --send-telegram --force --no-llm
-```
+[보고 기사]
 
-Remove the scheduled task:
-
-```powershell
-.\venv\Scripts\python.exe main.py --uninstall-scheduler --no-gui
-```
-
-## Report Rules Now Encoded
-
-- Report scope:
-  - Paper: report date.
-  - Online: previous day 18:00 through report date 06:00.
-- Keywords include:
-  - `대검찰청`, `대검`, `대법원`, `대법`, `헌법재판소`, `헌재`
-  - `서울중앙지검`, `서울고검`, `법무부`, `공수처`
-  - `검찰`, `법원`, `특검`
-  - `행정법원`, `회생법원`, `가정법원`
-  - `서울중앙지법`, `서울고법`
-  - `변협`, `대한변호사협회`, `서울지방변호사회`
-- Police-led articles are excluded from final selected report items.
-- Legal candidates excluded by filters should still be listed under skipped candidates with a reason.
-- Same-event duplicates are retained as skipped candidates. The report prefers exclusives and earlier uploaded items.
-- The report tone avoids polite endings such as `습니다`.
-- Report summaries should end in the compact desk style:
-  - `불기소 처분.`
-  - `확인됨.`
-  - quoted speech as `"..."고.`
-- The report includes newspaper/page suffixes where available, for example `경향 10면`, `중앙 14면`.
-
-## Report Format Contract
-
-The user expects the Telegram report to look like an internal morning legal desk brief, not a generic AI summary.
-
-Selected items must follow this block format:
-
-```text
-※기사 제목/언론사 면수
--핵심 새 내용 1~3문장. 보고체 말투. 불필요한 배경 설명 최소화.
+※제목/매체 면수 또는 섹션
+-보고체 요약.
 URL
+
+[보류/제외 기사]
+...
 ```
 
-Examples of acceptable endings:
+Telegram splitting:
 
-- `불기소 처분.`
-- `약식기소.`
-- `확인됨.`
-- `포착.`
-- `파악.`
-- `통보.`
-- `요구.`
-- `진행될 예정.`
-- `"..."고.`
+- Report and hold/exclusion sections are separate Telegram messages.
+- Follow-up report is prefixed with `[추가 보고]` if it has items.
+- Feedback guide is a separate Telegram message after the follow-up run.
 
-Avoid these endings in the delivered summary:
+## Feedback Commands
 
-- `했습니다`, `합니다`, `습니다`, `입니다`
-- `했다`, `하였다`, `한다`
-- dangling fragments such as `통해.`, `보다도.`, `저마다.`, `판단하면서다.`
-- source boilerplate such as reporter names, email addresses, AI summary notices, copyright notices, `많이 본 뉴스`
-
-The headline must preserve the article title and source/page information:
-
-- Paper examples: `경향 10면`, `중앙 14면`, `한겨레 6면`
-- Online-only examples: `연합뉴스 정치`, `뉴시스 사회`, `TV조선 사회`
-
-If a paper section is stored as `A10면`, render it as `10면`.
-
-## What Counts As Report-Worthy
-
-Include articles when they contain a meaningful legal/prosecution/court/legal-policy development, even if the title does not say `[단독]`.
-
-Strong inclusion signals:
-
-- Exclusive articles.
-- Prosecution decisions: `불기소`, `약식기소`, `기소`, `각하`, major investigation decisions.
-- Ministry of Justice or immigration decisions, including visa/sojourn status disputes.
-- Court rulings, Supreme Court decisions, major trial scheduling, sentencing, appeal-trial developments, recusal motions.
-- Special counsel developments, including summons, charges, request for sentence, trial updates, and special-counsel law/power disputes.
-- Prosecutorial reform and criminal-justice-system issues such as `보완수사권`, `중수청`, `공소청`, `검찰개혁`.
-- Supreme Court, Constitutional Court, prosecution office, bar association, bankruptcy/rehabilitation court or legal-profession issues.
-- Content that is effectively exclusive or desk-relevant even without an explicit `[단독]` label.
-
-Important example from 2026-05-14:
-
-- The user expected inclusion of the SK Chemical/Aekyung humidifier-disinfectant `불기소` article and the Nepal dementia mother visa-change refusal article because they are prosecution/MOJ decision stories.
-
-Important example from 2026-05-15:
-
-- `'매관매직' 김건희, 오늘 1심 마무리…특검 구형량은` must be included because it is a special-counsel/court proceeding item, even though an earlier filter once missed it.
-
-## What To Exclude Or Demote
-
-Exclude from selected report items:
-
-- Police-led articles where the main actor is police rather than prosecutors/court/MOJ/special counsel.
-- Generic crime articles unless the legal decision itself is the point.
-- Event schedules such as `[오늘의 주요일정]법조`, unless the user explicitly asks for schedules.
-- Opinion columns, editorials, `시시각각`, 기고, or broad political commentary unless they contain a concrete legal-policy development the user would brief.
-- Industrial, business, culture, shopping, tourism, or other non-legal stories that only contain incidental words such as `법적 근거`.
-- Medical/malpractice or ordinary accident stories unless a court/prosecution/legal decision is the actual news point.
-
-Do not silently drop keyword candidates. If a keyword-matching legal candidate is excluded, list it under skipped candidates with a reason.
-
-Skipped candidate sections should use:
+Users can send feedback in Telegram with:
 
 ```text
-## 걸러진 스트레이트/반복 기사
+/final
+최종 완성본 전체
 
-- 제목 / 언론사 (동일 사안 1.00)
-  URL
+/exclude
+제외해야 할 기사 제목 또는 제외 기준
 
-## 기타 제외 기사
+/fix
+원문: 어색한 문장
+수정: 원하는 보고체 문장
 
-- 제목 / 언론사 (경찰 주체 제외)
-  URL
-- 제목 / 언론사 (법조 초점 낮음)
-  URL
+/important
+앞으로 꼭 넣어야 할 기사 유형
 ```
 
-The skipped section is operationally important. It lets the user audit whether an article should have been included.
+The noon workflow collects these commands. At this handoff, collection works, but feedback is not yet automatically converted into new code/rules. That is the next improvement area.
 
-## Duplicate And Priority Rules
+## Local Validation Commands
 
-When multiple articles cover the same event on the same day:
+Install:
 
-- Prefer `[단독]` over non-exclusive.
-- Prefer the earlier uploaded article when both are otherwise equivalent.
-- Prefer paper articles when they are the user's expected morning paper item.
-- Keep duplicates under `걸러진 스트레이트/반복 기사` rather than hiding them.
+```powershell
+py -3 -m venv venv
+.\venv\Scripts\python.exe -m pip install --upgrade pip
+.\venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-report.txt
+```
 
-Example:
+Compile check:
 
-- If a non-exclusive article and a `[단독]` article cover the same prosecution action, the `[단독]` article should be selected and the other listed as a filtered duplicate.
+```powershell
+.\venv\Scripts\python.exe -m py_compile morning_report_task.py report_generator.py report_qa.py telegram_feedback.py cleanup_runtime_data.py
+```
 
-## Manual QA Before Sending
+Generate without Telegram:
 
-Before sending a regenerated report to Telegram, inspect or script-check:
+```powershell
+.\venv\Scripts\python.exe morning_report_task.py --date today --mode initial --force --no-llm
+.\venv\Scripts\python.exe morning_report_task.py --date today --mode update --no-llm
+```
 
-- Every selected block has `※`, one `-` summary line, and a URL.
-- Selected summaries use the compact report style, not polite endings.
-- Source/page suffix is present where available.
-- Skipped candidates are present when keyword candidates were filtered out.
-- The candidate count makes sense. If the output says only a few legal articles existed, verify against the raw morning-scope keyword candidates before trusting it.
-- No secrets, API keys, email boilerplate, AI-summary text, or copyright boilerplate appear in the report.
+QA a generated report:
 
-## 2026-05-15 Verification Snapshot
+```powershell
+.\venv\Scripts\python.exe report_qa.py "$env:USERPROFILE\.naver_news_crawler\reports\YYYYMMDD_morning_report.md"
+```
 
-The final checked 2026-05-15 report had:
+Cleanup:
 
-- 14 keyword candidates in morning scope.
-- 6 selected report items.
-- 1 same-event duplicate under `걸러진 스트레이트/반복 기사`.
-- 7 excluded candidates under `기타 제외 기사`.
+```powershell
+.\venv\Scripts\python.exe cleanup_runtime_data.py --days 30
+```
 
-Notable bug fixed that day:
+## Next Checks
 
-- The first implementation looked like only 3 legal candidates existed because `desk_focus` removed legal candidates before skipped-candidate rendering. This was fixed so keyword candidates excluded by filters still appear in the report diagnostics.
+1. Confirm the next real scheduled `06:07 KST` run has `paper_total > 0` when Naver paper pages are available.
+2. Add `NAVER_CLIENT_ID` and `NAVER_CLIENT_SECRET` GitHub Secrets if broader online discovery is needed.
+3. Decide whether GitHub Actions cache is enough, or whether Google Drive backup should be added with `GOOGLE_SERVICE_ACCOUNT_JSON` and `GOOGLE_DRIVE_FOLDER_ID`.
+4. Implement feedback-to-rule review:
+   - collect Telegram feedback,
+   - summarize candidate rule changes,
+   - optionally write a PR or update a rules file.
 
-## Notes For The Next Codex
+## Files Not To Commit
 
-The user wants hands-on verification, not advice-only output. Run the commands, inspect the generated Markdown, and fix code before sending if the report looks wrong.
-
-Do not expose or commit:
+Do not commit:
 
 - `.env`
-- Telegram bot token
-- Telegram chat ID
-- Gemini or Google API keys
-- SQLite DB files
-- generated report files
+- `venv/`
+- `.codex/`
+- `dist/`
+- `build/`
+- generated DB files
+- generated reports
+- release zip files
