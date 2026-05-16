@@ -161,6 +161,15 @@ def send_telegram(text):
 
 
 def split_telegram_message(text, limit=3800):
+    text = text.strip()
+    hold_marker = "\n[보류/제외 기사]"
+    if hold_marker in text:
+        report_text, hold_text = text.split(hold_marker, 1)
+        chunks = []
+        chunks.extend(split_telegram_message(report_text.strip(), limit=limit))
+        chunks.extend(split_telegram_message(("[보류/제외 기사]" + hold_text).strip(), limit=limit))
+        return chunks
+
     blocks = [block.strip() for block in text.split("\n\n") if block.strip()]
     chunks = []
     current = ""
