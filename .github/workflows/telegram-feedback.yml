@@ -1,0 +1,39 @@
+name: Telegram Feedback
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:00 UTC is 12:00 KST. Feedback is checked once after the morning report cycle.
+    - cron: "0 3 * * *"
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      TZ: Asia/Seoul
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Collect Telegram feedback
+        run: |
+          python telegram_feedback.py --json-out qa/telegram_feedback.json
+
+      - name: Upload feedback artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-feedback-${{ github.run_id }}
+          path: |
+            ~/.naver_news_crawler/data/telegram_feedback.db
+            ~/.naver_news_crawler/feedback/*.json
+            qa/telegram_feedback.json
+          if-no-files-found: warn
+          retention-days: 30

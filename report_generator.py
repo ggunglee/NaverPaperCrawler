@@ -338,24 +338,37 @@ class ReportDatabase:
         with self.connect() as conn:
             return conn.execute(sql, params).fetchall()
 
-    def morning_articles(self, report_date, online_start=None, online_end=None, include_analyzed=False, limit=None):
-        analyzed_clause = "" if include_analyzed else "AND COALESCE(is_analyzed, 0) = 0"
+    def morning_articles(
+        self,
+        report_date,
+        online_start=None,
+        online_end=None,
+        include_analyzed=False,
+        limit=None,
+        include_paper=True,
+    ):
+        analyzed_clause = "" if include_analyzed else "COALESCE(is_analyzed, 0) = 0"
+        scope_clauses = []
+        params = []
+        if include_paper:
+            scope_clauses.append("(article_type = '지면' AND date = ?)")
+            params.append(report_date)
+        scope_clauses.append(
+            """
+            (
+                article_type != '지면'
+                AND published_at IS NOT NULL
+                AND published_at >= ?
+                AND published_at <= ?
+            )
+            """
+        )
+        params.extend([online_start or "", online_end or ""])
         clauses = [
             "(COALESCE(body, '') != '' OR COALESCE(summary, '') != '')",
             analyzed_clause,
-            """
-            (
-                (article_type = '지면' AND date = ?)
-                OR (
-                    article_type != '지면'
-                    AND published_at IS NOT NULL
-                    AND published_at >= ?
-                    AND published_at <= ?
-                )
-            )
-            """,
+            f"({' OR '.join(scope_clauses)})",
         ]
-        params = [report_date, online_start or "", online_end or ""]
         sql = f"""
             SELECT * FROM articles
             WHERE {' AND '.join(clause for clause in clauses if clause)}
@@ -920,6 +933,7 @@ def generate_report(db, args):
             online_end=args.online_to,
             include_analyzed=args.include_analyzed or args.reset_analysis,
             limit=args.limit if args.all_articles else None,
+            include_paper=not getattr(args, "online_only", False),
         )
         if args.reset_analysis:
             db.reset_analysis_for_articles([row["id"] for row in rows])
@@ -974,7 +988,7 @@ def generate_report(db, args):
     rows, early_skipped = dedupe_event_rows(rows)
     early_skipped = candidate_exclusions + early_skipped
     if not rows:
-        report = f"# 아침 보고서 - {args.date}\n\n새로 분석할 기사가 없습니다.\n"
+        report = render_report(args.date, [], [] if getattr(args, "suppress_skipped", False) else early_skipped)
         output_path = write_report_file(args.date, report) if args.output_file else None
         db.save_report_run(args.date, output_path, [], report)
         return report

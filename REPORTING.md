@@ -8,12 +8,13 @@ The current production path is deterministic and does not call an LLM:
 venv\Scripts\python.exe morning_report_task.py --date today --send-telegram --force --no-llm
 ```
 
-The Windows scheduled task runs this command every day at 06:00.
+GitHub Actions runs the initial report every day at 06:07 KST. A second online-only follow-up run checks 06:00-07:50 articles at 07:55 KST.
 
 ## Scope
 
 - Paper articles: report date.
 - Online articles: previous day 18:00 through report date 06:00.
+- Online follow-up articles: report date 06:00 through 07:50, online-only.
 - Output path: `%USERPROFILE%\.naver_news_crawler\reports\YYYYMMDD_morning_report.md`.
 - Delivery: Telegram.
 
@@ -82,7 +83,7 @@ Excluded keyword candidates should still be visible in the report diagnostics.
 When same-day articles cover the same event:
 
 - Prefer `[단독]` if present.
-- Otherwise prefer the earlier uploaded article.
+- Otherwise prefer `연합뉴스`.
 - Prefer the paper article when it is the expected morning-paper item.
 - Put duplicates under `걸러진 스트레이트/반복 기사`.
 
@@ -184,6 +185,12 @@ Generate without sending:
 venv\Scripts\python.exe morning_report_task.py --date today --force --no-llm
 ```
 
+Generate the online-only follow-up without sending:
+
+```bat
+venv\Scripts\python.exe morning_report_task.py --date today --mode update --no-llm
+```
+
 Generate a fixed-date report from the existing DB:
 
 ```bat
@@ -194,6 +201,35 @@ Send after inspecting:
 
 ```bat
 venv\Scripts\python.exe morning_report_task.py --date today --force --no-llm --send-telegram
+```
+
+Send the online-only follow-up and then send the separate feedback guide:
+
+```bat
+venv\Scripts\python.exe morning_report_task.py --date today --mode update --no-llm --send-telegram --send-feedback-guide
+```
+
+Collect Telegram feedback commands:
+
+```bat
+venv\Scripts\python.exe telegram_feedback.py
+```
+
+Feedback command formats:
+
+```text
+/final
+최종 완성본 전체
+
+/exclude
+제외해야 할 기사 제목 또는 제외 기준
+
+/fix
+원문: 어색한 문장
+수정: 원하는 보고체 문장
+
+/important
+앞으로 꼭 넣어야 할 기사 유형
 ```
 
 ## Manual QA Checklist

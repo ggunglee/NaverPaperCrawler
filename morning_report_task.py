@@ -17,7 +17,14 @@ from report_generator import ReportDatabase, generate_report
 def parse_args():
     parser = argparse.ArgumentParser(description="Crawl and send the legal morning report.")
     parser.add_argument("--date", default="today", help="Report date YYYYMMDD or today.")
+    parser.add_argument(
+        "--mode",
+        choices=["initial", "update"],
+        default="initial",
+        help="initial sends the 06:00 report; update checks online articles from 06:00 to 07:50.",
+    )
     parser.add_argument("--send-telegram", action="store_true", help="Send the generated report to Telegram.")
+    parser.add_argument("--send-feedback-guide", action="store_true", help="Send feedback instructions after the report.")
     parser.add_argument("--force", action="store_true", help="Re-analyze already analyzed articles in the morning scope.")
     parser.add_argument("--no-crawl", action="store_true", help="Skip crawling and only generate/send from DB.")
     parser.add_argument("--no-llm", action="store_true", help="Use deterministic extractive summaries without an LLM.")
@@ -43,17 +50,28 @@ def online_window(report_date):
     return start, end
 
 
-def fetch_bodies_for_scope(db, report_date, online_start, online_end, force=False):
+def update_online_window(report_date):
+    base = datetime.strptime(report_date, "%Y%m%d")
+    start = datetime.combine(base.date(), time(6, 0))
+    end = datetime.combine(base.date(), time(7, 50))
+    return start, end
+
+
+def fetch_bodies_for_scope(db, report_date, online_start, online_end, force=False, include_paper=True):
     crawler = NaverPaperCrawler(db)
     keywords = load_body_keywords()
     excludes = load_exclude_keywords()
-    rows = db.search_articles(
-        date=report_date,
-        keyword=None,
-        search_scope="title_summary",
-        article_type="지면",
-        exclude_keywords=excludes,
-    )
+    rows = []
+    if include_paper:
+        rows.extend(
+            db.search_articles(
+                date=report_date,
+                keyword=None,
+                search_scope="title_summary",
+                article_type="지면",
+                exclude_keywords=excludes,
+            )
+        )
     rows.extend(
         row
         for row in db.search_articles(
@@ -113,6 +131,7 @@ def build_report(report_date, online_start, online_end, args):
         all_articles=False,
         only_exclusive=False,
         paper_only=False,
+        online_only=args.mode == "update",
         desk_focus=True,
         limit=None,
         output_file=True,
@@ -129,6 +148,29 @@ def build_report(report_date, online_start, online_end, args):
         exclusive_threshold=0.82,
     )
     return generate_report(ReportDatabase(), report_args)
+
+
+def feedback_guide_message():
+    return """[피드백 보내는 법]
+
+아침보고를 고친 뒤 아래 형식으로 이 방에 보내주면 낮 12시쯤 프로그램이 모아서 다음 룰 개선 자료로 쓰게 만들 예정.
+
+/final
+최종 완성본 전체
+
+/exclude
+제외해야 할 기사 제목 또는 제외 기준
+
+/fix
+원문: 어색한 문장
+수정: 원하는 보고체 문장
+
+/important
+앞으로 꼭 넣어야 할 기사 유형"""
+
+
+def report_has_selected_items(report):
+    return any(line.startswith("※") for line in (report or "").splitlines())
 
 
 def telegram_credentials():
@@ -191,21 +233,44 @@ def main():
     setup_logging()
     args = parse_args()
     report_date = report_date_value(args.date)
-    online_start, online_end = online_window(report_date)
+    if args.mode == "update":
+        online_start, online_end = update_online_window(report_date)
+    else:
+        online_start, online_end = online_window(report_date)
     db = Database()
 
     if not args.no_crawl:
-        paper = NaverPaperCrawler(db).crawl_date(report_date)
+        if args.mode == "update":
+            paper = {"total": 0, "inserted": 0}
+        else:
+            paper = NaverPaperCrawler(db).crawl_date(report_date)
         online = crawl_online_candidates(db, online_start, online_end, exclude_keywords=load_exclude_keywords())
-        fetched = fetch_bodies_for_scope(db, report_date, online_start, online_end, force=args.force)
+        fetched = fetch_bodies_for_scope(
+            db,
+            report_date,
+            online_start,
+            online_end,
+            force=args.force,
+            include_paper=args.mode != "update",
+        )
         print(
+            f"mode={args.mode} "
             f"paper_total={paper['total']} paper_inserted={paper['inserted']} "
             f"online_total={online['total']} online_inserted={online['inserted']} body_fetched={fetched}"
         )
 
     report = build_report(report_date, online_start, online_end, args)
     if args.send_telegram:
-        send_telegram(report)
+        telegram_report = report
+        if args.mode == "update" and report_has_selected_items(report):
+            telegram_report = "[추가 보고]\n\n" + report
+        should_send_report = args.mode != "update" or report_has_selected_items(report)
+        if should_send_report:
+            send_telegram(telegram_report)
+        else:
+            print("telegram_report_skipped=no_update_items")
+        if args.send_feedback_guide:
+            send_telegram(feedback_guide_message())
         print("telegram_sent=1")
     return 0
 

@@ -11,10 +11,20 @@ on:
         options:
           - "true"
           - "false"
+      mode:
+        description: "Report mode"
+        required: true
+        default: "initial"
+        type: choice
+        options:
+          - "initial"
+          - "update"
   schedule:
     # GitHub cron uses UTC. 21:07 UTC is 06:07 KST.
     # A few minutes after the hour avoids the busiest scheduler minute.
     - cron: "7 21 * * *"
+    # 22:55 UTC is 07:55 KST. This checks online-only follow-up stories from 06:00 to 07:50.
+    - cron: "55 22 * * *"
 
 jobs:
   send:
@@ -43,10 +53,22 @@ jobs:
       - name: Generate morning report
         run: |
           SEND_FLAG="--send-telegram"
+          MODE="initial"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_telegram }}" = "false" ]; then
             SEND_FLAG=""
           fi
-          python morning_report_task.py --date today $SEND_FLAG --force --no-llm
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          elif [ "${{ github.event.schedule }}" = "55 22 * * *" ]; then
+            MODE="update"
+          fi
+          EXTRA_FLAGS="--force"
+          FEEDBACK_FLAG=""
+          if [ "$MODE" = "update" ]; then
+            EXTRA_FLAGS=""
+            FEEDBACK_FLAG="--send-feedback-guide"
+          fi
+          python morning_report_task.py --date today --mode "$MODE" $SEND_FLAG $FEEDBACK_FLAG $EXTRA_FLAGS --no-llm
 
       - name: Summarize generated report
         if: always()
