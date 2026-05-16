@@ -67,7 +67,7 @@ Exclude from selected report items:
 - Event schedules such as `[오늘의 주요일정]법조`.
 - Opinion/editorial/column items unless they contain a concrete legal-policy development.
 - Election-campaign diary items such as campaign-office openings, launch events, stump speeches, and routine candidate moves.
-- Political rally or partisan attack items where legal words appear only as rhetoric, such as 사법쿠데타, 조작기소, 공소취소, 하야 집회.
+- Political rally or partisan attack items where legal words appear only as rhetoric, such as 사법쿠데타, 조작기소, 하야 집회. Polling stories can remain if the legal issue is the substance of the poll.
 - Business, industry, shopping, tourism, or culture stories with merely incidental legal wording.
 - Non-legal policy stories that only contain phrases such as `법적 근거`.
 - Legal-advice/lifestyle items such as radio 상담소, 사연자, 생활법률, 상간녀/상간남 상담 stories.

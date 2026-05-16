@@ -12,3 +12,4 @@ release_packages/
 *.log
 .pytest_cache/
 .mypy_cache/
+.codex/

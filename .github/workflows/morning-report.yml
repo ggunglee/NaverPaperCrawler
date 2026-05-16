@@ -47,9 +47,13 @@ jobs:
               print("No report file found.")
               raise SystemExit(0)
           path = reports[-1]
+          qa_path = Path("qa") / f"{path.stem}_qa.json"
+          import subprocess, sys
+          subprocess.run([sys.executable, "report_qa.py", str(path), "--json-out", str(qa_path)], check=False)
           text = path.read_text(encoding="utf-8")
           selected = sum(1 for line in text.splitlines() if line.startswith("※"))
           forbidden = [term for term in ["데일리메일", "생활법률", "상담소", "사연자", "동일 사안 1.00"] if term in text]
+          qa = qa_path.read_text(encoding="utf-8") if qa_path.exists() else "{}"
           summary = [
               "## Morning report artifact",
               "",
@@ -57,6 +61,12 @@ jobs:
               f"- Characters: `{len(text)}`",
               f"- Selected items: `{selected}`",
               f"- Forbidden terms found: `{', '.join(forbidden) if forbidden else 'none'}`",
+              "",
+              "### QA JSON",
+              "",
+              "```json",
+              qa.strip(),
+              "```",
           ]
           summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
           if summary_path:
@@ -73,5 +83,6 @@ jobs:
             ~/.naver_news_crawler/reports/*_morning_report.md
             ~/.naver_news_crawler/data/*.db
             ~/.naver_news_crawler/logs/*.log
+            qa/*.json
           if-no-files-found: warn
           retention-days: 14
