@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from config import DATA_DIR, DB_PATH, SAFE_DIR, ensure_app_dirs
-from report_generator import ReportDatabase
 
 
 def parse_args():
@@ -35,7 +34,6 @@ def table_exists(conn, table):
 def prune_main_db(path, cutoff):
     if not path.exists():
         return {"db": str(path), "exists": False}
-    ReportDatabase(path)
     deleted = {}
     with sqlite3.connect(path) as conn:
         if table_exists(conn, "article_embeddings"):

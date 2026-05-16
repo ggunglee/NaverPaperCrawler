@@ -1,5 +1,9 @@
 name: Telegram Feedback
 
+permissions:
+  contents: read
+  actions: write
+
 on:
   workflow_dispatch:
   schedule:
@@ -37,8 +41,8 @@ jobs:
           python - <<'PY'
           import json
           import subprocess
-          caches = json.loads(
-              subprocess.check_output(
+          try:
+              raw = subprocess.check_output(
                   [
                       "gh",
                       "cache",
@@ -51,8 +55,13 @@ jobs:
                       "id,key,createdAt",
                   ],
                   text=True,
+                  stderr=subprocess.STDOUT,
               )
-          )
+          except subprocess.CalledProcessError as exc:
+              print("runtime_cache_prune_skipped=1")
+              print(exc.output)
+              raise SystemExit(0)
+          caches = json.loads(raw)
           caches.sort(key=lambda item: item["createdAt"], reverse=True)
           for cache in caches[5:]:
               subprocess.run(["gh", "cache", "delete", str(cache["id"])], check=False)
