@@ -63,10 +63,14 @@ Exclude from selected report items:
 
 - Police-led articles where police are the main actor.
 - Generic violent crime or accident articles unless the legal decision is the main news.
+- Foreign incident articles sourced mainly from overseas media, such as Daily Mail/Reuters/AP/BBC/CNN, unless there is a concrete Korean legal-system angle.
 - Event schedules such as `[오늘의 주요일정]법조`.
 - Opinion/editorial/column items unless they contain a concrete legal-policy development.
 - Business, industry, shopping, tourism, or culture stories with merely incidental legal wording.
 - Non-legal policy stories that only contain phrases such as `법적 근거`.
+- Legal-advice/lifestyle items such as radio 상담소, 사연자, 생활법률, 상간녀/상간남 상담 stories.
+
+Foreign incident articles sourced mainly from overseas media are outside the user's interest and should be dropped silently, not shown in skipped candidates.
 
 Excluded keyword candidates should still be visible in the report diagnostics.
 

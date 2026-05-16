@@ -949,6 +949,15 @@ def generate_report(db, args):
         if row not in non_police_rows and matches_monitor_keywords(row)
     )
     rows = non_police_rows
+    domestic_rows = [row for row in rows if not is_foreign_incidental_article(row)]
+    rows = domestic_rows
+    report_rows = [row for row in rows if not is_lifestyle_legal_advice(row)]
+    candidate_exclusions.extend(
+        (row, "lifestyle_legal_advice", None, None)
+        for row in rows
+        if row not in report_rows and matches_monitor_keywords(row)
+    )
+    rows = report_rows
     if args.desk_focus:
         desk_rows = [row for row in rows if is_desk_focus_article(row)]
         candidate_exclusions.extend(
@@ -1308,8 +1317,9 @@ def most_similar_candidate(db, embedder, row, candidates):
 def same_day_priority_key(row):
     title = row["title"] or ""
     is_exclusive = "단독" in title
+    is_yonhap = (row["newspaper"] or "") == "연합뉴스"
     time_key = row["published_at"] or row["created_at"] or ""
-    return (0 if is_exclusive else 1, time_key, row["id"])
+    return (0 if is_exclusive else 1, 0 if is_yonhap else 1, time_key, row["id"])
 
 
 def title_token_similarity(left, right):
@@ -1347,10 +1357,10 @@ def dedupe_event_rows(rows):
 
 def report_article_priority(row):
     title = row["title"] or ""
-    article_type = row["article_type"] or ""
+    is_yonhap = (row["newspaper"] or "") == "연합뉴스"
     return (
         0 if "단독" in title else 1,
-        0 if article_type == "지면" else 1,
+        0 if is_yonhap else 1,
         row["published_at"] or row["created_at"] or "",
         row["id"],
     )
@@ -1369,6 +1379,16 @@ def article_event_key(row):
         return "검찰:보완수사권:여론조사"
     if "박상용" in text and ("감찰" in text or "징계" in text):
         return "박상용:감찰징계"
+    if "김건희" in text and "매관매직" in text and "구형" in text:
+        return "김건희:매관매직:구형"
+    if "방통위" in text and "2인체제" in text and "KBS" in text and "감사" in text:
+        return "방통위:2인체제:KBS감사"
+    if ("제이알글로벌리츠" in text or "제이알리츠" in text) and "회생" in text:
+        return "제이알리츠:회생절차"
+    if "김어준" in text and "명예훼손" in text and "구형" in text:
+        return "김어준:명예훼손:구형"
+    if "택배대리점" in text and "살해사주" in text and "구형" in text:
+        return "택배대리점:살해사주:구형"
     if "가습기살균제" in text and "불기소" in text:
         return "가습기살균제:불기소"
     if "네팔" in text and "비자" in text and "법무부" in text:
@@ -1429,7 +1449,7 @@ def recommend_category(row):
         return "검찰 수사개혁", 3, ["검찰 제도"]
     if any(keyword in text for keyword in ["감찰위", "감찰", "박상용", "대검"]):
         return "검찰 감찰", 3, ["검찰 감찰"]
-    if any(keyword in text for keyword in ["불기소", "약식기소", "기소", "고소", "서울중앙지검"]):
+    if any(keyword in text for keyword in ["불기소", "약식기소", "기소", "구형", "고소", "서울중앙지검"]):
         return "검찰 처분", 3, ["검찰 처분"]
     if any(keyword in text for keyword in ["법무부", "비자", "출입국"]):
         return "법무부", 3, ["법무부"]
@@ -1460,6 +1480,70 @@ def is_police_led_article(row):
     title = row["title"] or ""
     title = re.sub(r"^\s*\[[^\]]*단독[^\]]*\]\s*", "", title)
     return "경찰" in title
+
+
+def is_foreign_incidental_article(row):
+    title = row["title"] or ""
+    text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    foreign_terms = [
+        "데일리메일",
+        "외신",
+        "현지시각",
+        "현지시간",
+        "영국",
+        "미국",
+        "일본",
+        "중국",
+        "프랑스",
+        "독일",
+        "브라질",
+        "인도",
+        "Daily Mail",
+        "Reuters",
+        "AP통신",
+        "BBC",
+        "CNN",
+    ]
+    domestic_anchor_terms = [
+        "대법",
+        "대법원",
+        "헌재",
+        "헌법재판소",
+        "법무부",
+        "특검",
+        "공수처",
+        "대검",
+        "중수청",
+        "공소청",
+        "서울중앙지검",
+        "서울고검",
+        "서울중앙지법",
+        "서울고법",
+        "서울행정법원",
+        "김건희",
+        "윤석열",
+    ]
+    if not any(term in text for term in foreign_terms):
+        return False
+    if any(term in text for term in domestic_anchor_terms):
+        return False
+    return True
+
+
+def is_lifestyle_legal_advice(row):
+    text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    advice_terms = [
+        "상담소",
+        "사연자",
+        "생활법률",
+        "조인섭 변호사",
+        "법률상담",
+        "상간녀 소송",
+        "상간남 소송",
+    ]
+    if any(term in text for term in advice_terms):
+        return True
+    return "라디오" in text and any(term in text for term in ["상담", "사연", "생활법률"])
 
 
 def is_desk_focus_article(row):
@@ -1571,6 +1655,7 @@ def clean_article_text(text):
     text = re.sub(r"\b\d{2}\.\d{2}\s+(?:오전|오후)\s+\d{1,2}:\d{2}\b", " ", text)
     text = re.sub(r"\b[\w.+-]+@[\w.-]+\.\w+\b", " ", text)
     text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"\[(?:앵커|리포트|기자)\]", " ", text)
     text = re.sub(r"\[[^\]]*(?:관련기사|설명할경향|단독)[^\]]*\]", " ", text)
     text = re.sub(r"(?:사진|그래픽|자료사진)\s*[=:]\s*[^.。]*", " ", text)
     text = re.sub(r"[가-힣]{2,5}\s*(?:선임|인턴|수습)?기자\s*[^.。]*", " ", text)
@@ -1630,6 +1715,8 @@ def is_noise_sentence(sentence):
         "사회 전체",
         "국회 의사봉",
         "국정과제 입법",
+        "[앵커]",
+        "[리포트]",
     ]
     if any(term in sentence for term in hard_noise_terms):
         return True
@@ -1790,6 +1877,7 @@ def render_report(report_date, items, skipped):
                     "paper_only_excluded": "지면 범위 제외",
                     "non_exclusive_candidate": "단독 아님",
                     "police_led_candidate": "경찰 주체 제외",
+                    "lifestyle_legal_advice": "생활법률/상담성 기사 제외",
                     "desk_focus_excluded": "법조 초점 낮음",
                 }
                 suffix = f"유사도 {score:.2f}" if score is not None else reason_labels.get(reason, reason)
@@ -1876,7 +1964,7 @@ def clean_candidate_sentence(sentence, row=None):
 def is_bad_report_sentence(sentence, row=None):
     if len(sentence) > 260:
         return True
-    if re.search(r"(습니다|습니까|됩니다|합니다|합니다|이에요|예요|어요|아요)[.!?。]?$", sentence):
+    if re.search(r"(니다|니까|됩니다|합니다|입니다|겁니다|이에요|예요|어요|아요)[.!?。]?$", sentence):
         return True
     if not re.search(r"(다|됨|음|고|며|돼|해|계획|요구|통보|평가|판단|확인|포착|파악)[.!?。]?$", sentence):
         return True
@@ -1982,6 +2070,8 @@ def normalize_report_tone(text):
         ("처분했다", "처분"),
         ("기소했다.", "기소."),
         ("기소했다", "기소"),
+        ("기소했습니다.", "기소."),
+        ("기소했습니다", "기소"),
         ("불허했다.", "불허."),
         ("불허했다", "불허"),
         ("제출했다.", "제출."),
@@ -1990,6 +2080,22 @@ def normalize_report_tone(text):
         ("주장했다", "주장"),
         ("확인했다.", "확인."),
         ("확인했다", "확인"),
+        ("인정했다.", "인정."),
+        ("인정했다", "인정"),
+        ("기각했다.", "기각."),
+        ("기각했다", "기각"),
+        ("각하했다.", "각하."),
+        ("각하했다", "각하"),
+        ("선고했다.", "선고."),
+        ("선고했다", "선고"),
+        ("선고받았다.", "선고."),
+        ("선고받았다", "선고"),
+        ("요청했다.", "요청."),
+        ("요청했다", "요청"),
+        ("결정했다.", "결정."),
+        ("결정했다", "결정"),
+        ("내렸다.", "결정."),
+        ("내렸다", "결정"),
         ("파악했다.", "파악."),
         ("파악했다", "파악"),
         ("밝혔다.", "밝혀."),
@@ -2004,8 +2110,12 @@ def normalize_report_tone(text):
         ("판단했다", "판단"),
         ("계획이다.", "계획."),
         ("계획이다", "계획"),
+        ("계획입니다.", "계획."),
+        ("계획입니다", "계획"),
         ("상태다.", "상태."),
         ("상태다", "상태"),
+        ("상태입니다.", "상태."),
+        ("상태입니다", "상태"),
         ("했다.", "."),
         ("했다", ""),
         ("하다.", "."),
@@ -2018,16 +2128,52 @@ def normalize_report_tone(text):
         ("보였다", "보였음"),
         ("이었다.", "이었음."),
         ("이었다", "이었음"),
+        ("이었습니다.", "이었음."),
+        ("이었습니다", "이었음"),
         ("였다.", "였음."),
         ("였다", "였음"),
+        ("였습니다.", "였음."),
+        ("였습니다", "였음"),
+        ("뿐이었습니다.", "뿐이었음."),
+        ("뿐이었습니다", "뿐이었음"),
         ("이다.", "."),
         ("이다", ""),
+        ("입니다.", "."),
+        ("입니다", ""),
+        ("겁니다.", "."),
+        ("겁니다", ""),
         ("됐다.", "됨."),
         ("됐다", "됨"),
         ("했습니다.", "."),
         ("했습니다", ""),
         ("합니다.", "."),
         ("합니다", ""),
+        ("이어갑니다.", "이어감."),
+        ("이어갑니다", "이어감"),
+        ("살펴봅니다.", "살펴봄."),
+        ("살펴봅니다", "살펴봄"),
+        ("나옵니다.", "나옴."),
+        ("나옵니다", "나옴"),
+        ("보입니다.", "보임."),
+        ("보입니다", "보임"),
+        ("나왔습니다.", "나옴."),
+        ("나왔습니다", "나옴"),
+        ("나왔다.", "나옴."),
+        ("나왔다", "나옴"),
+        ("나타났습니다.", "나타남."),
+        ("나타났습니다", "나타남"),
+        ("나타났다.", "나타남."),
+        ("나타났다", "나타남"),
+        ("받았습니다.", "받음."),
+        ("받았습니다", "받음"),
+        ("받았다.", "받음."),
+        ("받았다", "받음"),
+        ("맡았습니다.", "맡음."),
+        ("맡았습니다", "맡음"),
+        ("맡았다.", "맡음."),
+        ("맡았다", "맡음"),
+        ("취득했습니다.", "취득."),
+        ("취득했습니다", "취득"),
         ("됐습니다.", "됨."),
         ("됐습니다", "됨"),
         ("되었습니다.", "됨."),
@@ -2042,6 +2188,8 @@ def normalize_report_tone(text):
         ("답변했습니다", "답변"),
         ("확인됐습니다.", "확인돼."),
         ("확인됐습니다", "확인돼"),
+        ("있었습니다.", "있었음."),
+        ("있었습니다", "있었음"),
         ("파악됐습니다.", "파악돼."),
         ("파악됐습니다", "파악돼"),
         ("판단했습니다.", "판단."),
@@ -2105,6 +2253,13 @@ def normalize_report_tone(text):
         text = text.replace(old, new)
     text = re.sub(r"했다(?=[\s.。]|$)", "", text)
     text = re.sub(r"하다(?=[\s.。]|$)", "", text)
+    text = re.sub(r"받았다(?=[\s.。]|$)", "받음", text)
+    text = re.sub(r"나왔다(?=[\s.。]|$)", "나옴", text)
+    text = re.sub(r"맡았다(?=[\s.。]|$)", "맡음", text)
+    text = re.sub(r"선고받았다(?=[\s.。]|$)", "선고", text)
+    text = re.sub(r"선고했다(?=[\s.。]|$)", "선고", text)
+    text = re.sub(r"요청했다(?=[\s.。]|$)", "요청", text)
+    text = re.sub(r"결과가 나온\.", "결과가 나옴.", text)
     text = re.sub(r"([가-힣]{2,})(?:해|함)\.", r"\1.", text)
     text = re.sub(r"([가-힣]{2,})이었다\.", r"\1이었음.", text)
     text = re.sub(r"([가-힣]{2,})이다\.", r"\1.", text)
