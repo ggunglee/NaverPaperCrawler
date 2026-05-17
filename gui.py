@@ -577,10 +577,6 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         form = QFormLayout()
-        self.gemini_key_edit = QLineEdit()
-        self.gemini_key_edit.setEchoMode(QLineEdit.Password)
-        self.gemini_key_edit.setText(load_config().get("gemini_api_key", ""))
-        form.addRow("Gemini API Key", self.gemini_key_edit)
         self.body_keywords_edit = QTextEdit()
         self.body_keywords_edit.setMaximumHeight(120)
         self.body_keywords_edit.setPlainText(", ".join(load_body_keywords()))
@@ -1215,7 +1211,6 @@ class MainWindow(QMainWindow):
         keywords = normalize_keywords(self.body_keywords_edit.toPlainText().replace(",", "\n").splitlines())
         exclude_keywords = normalize_keywords(self.exclude_keywords_edit.toPlainText().replace(",", "\n").splitlines())
         update_config({
-            "gemini_api_key": self.gemini_key_edit.text().strip(),
             "body_keywords": keywords,
             "exclude_keywords": exclude_keywords,
         })

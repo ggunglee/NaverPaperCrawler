@@ -24,11 +24,11 @@ on:
           - "initial"
           - "update"
   schedule:
-    # GitHub cron uses UTC. 21:07 UTC is 06:07 KST.
+    # GitHub cron uses UTC. 20:07 UTC is 05:07 KST.
     # A few minutes after the hour avoids the busiest scheduler minute.
-    - cron: "7 21 * * *"
-    # 22:55 UTC is 07:55 KST. This checks online-only follow-up stories from 06:00 to 07:50.
-    - cron: "55 22 * * *"
+    - cron: "7 20 * * *"
+    # 21:55 UTC is 06:55 KST. This checks online-only follow-up stories from 06:00 to 06:50.
+    - cron: "55 21 * * *"
 
 jobs:
   send:
@@ -105,7 +105,7 @@ jobs:
           fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             MODE="${{ inputs.mode }}"
-          elif [ "${{ github.event.schedule }}" = "55 22 * * *" ]; then
+          elif [ "${{ github.event.schedule }}" = "55 21 * * *" ]; then
             MODE="update"
           fi
           EXTRA_FLAGS="--force"

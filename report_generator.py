@@ -2,16 +2,13 @@ import argparse
 import hashlib
 import json
 import math
-import os
 import re
 import sqlite3
-import urllib.error
-import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from config import DB_PATH, SAFE_DIR, load_config, load_env_values
+from config import DB_PATH, SAFE_DIR
 from crawler import NaverPaperCrawler
 from database import Database
 
@@ -697,18 +694,7 @@ def parse_args():
     parser.add_argument("--suppress-skipped", action="store_true", help="Do not render skipped/diagnostic sections.")
     parser.add_argument("--limit", type=int, help="Limit pending articles for test runs.")
     parser.add_argument("--output-file", action="store_true", help="Save markdown report under the app reports folder.")
-    parser.add_argument("--no-llm", action="store_true", help="Do not call an LLM; render candidate summaries only.")
-    parser.add_argument(
-        "--llm-backend",
-        choices=["gemini", "ollama"],
-        default=os.environ.get("REPORT_LLM_BACKEND", "gemini"),
-        help="LLM backend for report-worthiness and summary generation.",
-    )
-    parser.add_argument("--gemini-model", default=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
-    parser.add_argument("--ollama-model", default=os.environ.get("OLLAMA_MODEL", "qwen3:4b"))
-    parser.add_argument("--ollama-url", default=os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434"))
-    parser.add_argument("--ollama-timeout", type=int, default=int(os.environ.get("OLLAMA_TIMEOUT", "300")))
-    parser.add_argument("--ollama-num-ctx", type=int, default=int(os.environ.get("OLLAMA_NUM_CTX", "4096")))
+    parser.add_argument("--no-llm", action="store_true", help="Compatibility flag; reports are always deterministic.")
     parser.add_argument("--embedding-backend", choices=["auto", "sentence", "lexical"], default="auto")
     parser.add_argument("--similarity-threshold", type=float, default=SIMILARITY_THRESHOLD)
     parser.add_argument(
@@ -780,7 +766,6 @@ def run_preflight(db, args):
             except Exception as exc:
                 checks.append((f"table:{table}", False, str(exc)))
     optional_modules = {
-        "google.genai": "optional; needed only for Gemini LLM runs",
         "kss": "optional; built-in sentence splitter is used when missing",
         "numpy": "optional; lexical embedding backend works without it",
     }
@@ -795,13 +780,7 @@ def run_preflight(db, args):
         checks.append(("module:sentence_transformers", True, "installed"))
     except Exception:
         checks.append(("module:sentence_transformers", True, "not installed; lexical fallback will be used"))
-    if args.no_llm:
-        checks.append(("Gemini API key", True, "not required for --no-llm"))
-    else:
-        checks.append(("Gemini API key", bool(gemini_api_key()), "configured" if gemini_api_key() else "missing"))
-    if args.llm_backend == "ollama":
-        ok, detail = ollama_status(args.ollama_url)
-        checks.append(("Ollama server", ok, detail))
+    checks.append(("LLM backend", True, "not used; deterministic report generation is active"))
     for name, ok, detail in checks:
         status = "OK" if ok else "FAIL"
         print(f"[{status}] {name}: {detail}")
@@ -1029,88 +1008,16 @@ def generate_report(db, args):
 
     report_items = []
     for category, category_rows in candidates_by_category.items():
-        if args.no_llm:
-            items = fallback_items(category_rows)
-            report_items.extend(items)
-            for row, item in zip(category_rows, items):
-                db.save_analysis(
-                    row["id"],
-                    category,
-                    "candidate_no_llm",
-                    report_summary_md=item["summary"],
-                    mark_analyzed=False,
-                )
-            continue
-        try:
-            result = analyze_with_llm(db, category, category_rows, args)
-        except Exception as exc:
-            for row in category_rows:
-                db.save_analysis(
-                    row["id"],
-                    category,
-                    "failed",
-                    error=str(exc),
-                    mark_analyzed=False,
-                )
-            skipped.extend((row, f"llm_failed: {exc}", None, None) for row in category_rows)
-            continue
-        db.save_baseline(category, result.get("updated_baseline_md") or db.baseline(category))
-        by_id = {int(item["article_id"]): item for item in result.get("items", []) if item.get("article_id")}
-        for row in category_rows:
-            item = by_id.get(row["id"])
-            if not item:
-                fallback = fallback_item_if_report_worthy(row)
-                if fallback:
-                    report_items.append(fallback)
-                    db.save_analysis(
-                        row["id"],
-                        category,
-                        "candidate_llm_no_response",
-                        report_summary_md=fallback["summary"],
-                    )
-                else:
-                    db.save_analysis(row["id"], category, "analyzed_no_response", mark_analyzed=False)
-                continue
-            if item.get("is_report_worthy"):
-                summary = polish_report_summary(item.get("report_summary") or "", row)
-                if not summary_passes_quality_gate(summary, row):
-                    fallback = fallback_item_if_report_worthy(row) or fallback_items([row])[0]
-                    if fallback:
-                        report_items.append(fallback)
-                        db.save_analysis(
-                            row["id"],
-                            category,
-                            "candidate_quality_fallback",
-                            exclusive_score=item.get("exclusive_score"),
-                            new_facts_md="\n".join(item.get("new_claims", [])),
-                            report_summary_md=fallback["summary"],
-                            raw_response=json.dumps(item, ensure_ascii=False),
-                        )
-                        continue
-                report_items.append(
-                    {
-                        "headline": format_headline(row),
-                        "summary": summary,
-                        "url": row["url"],
-                    }
-                )
-                status = "analyzed_new"
-            else:
-                status = "analyzed_no_new"
+        items = fallback_items(category_rows)
+        report_items.extend(items)
+        for row, item in zip(category_rows, items):
             db.save_analysis(
                 row["id"],
                 category,
-                status,
-                exclusive_score=item.get("exclusive_score"),
-                new_facts_md="\n".join(item.get("new_claims", [])),
-                report_summary_md=item.get("report_summary"),
-                raw_response=json.dumps(item, ensure_ascii=False),
+                "candidate_deterministic",
+                report_summary_md=item["summary"],
+                mark_analyzed=False,
             )
-            for claim in item.get("new_claims", []):
-                if claim.strip():
-                    vector = embedder.encode(claim)
-                    if not is_duplicate_claim(db, category, vector, EXCLUSIVE_THRESHOLD):
-                        db.save_claim(claim, category, row, vector)
 
     report = render_report(args.date, report_items, [] if getattr(args, "suppress_skipped", False) else skipped)
     output_path = None
@@ -1127,77 +1034,6 @@ def write_report_file(report_date, report):
     output_path = str(output)
     print(f"saved: {output_path}")
     return output_path
-
-
-def analyze_with_llm(db, category, rows, args):
-    if args.llm_backend == "ollama":
-        return analyze_with_ollama(db, category, rows, args)
-    return analyze_with_gemini(db, category, rows, args.gemini_model)
-
-
-def analyze_with_gemini(db, category, rows, model_name):
-    api_key = gemini_api_key()
-    if not api_key:
-        raise SystemExit("Gemini API key not found. Save it in GUI config or set GEMINI_API_KEY.")
-    prompt = build_prompt(db, category, rows)
-    try:
-        from google import genai
-
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(model=model_name, contents=prompt)
-        text = getattr(response, "text", "") or ""
-    except ImportError:
-        try:
-            import google.generativeai as old_genai
-        except ImportError as exc:
-            raise SystemExit(
-                "google-genai is not installed. Run: "
-                "venv\\Scripts\\python.exe -m pip install -r requirements-report.txt"
-            ) from exc
-        old_genai.configure(api_key=api_key)
-        model = old_genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
-        text = getattr(response, "text", "") or ""
-    return parse_json_response(text)
-
-
-def analyze_with_ollama(db, category, rows, args):
-    prompt = build_prompt(
-        db,
-        category,
-        rows,
-        article_char_limit=2200,
-        claim_limit=25,
-        baseline_char_limit=1600,
-    )
-    payload = {
-        "model": args.ollama_model,
-        "prompt": prompt,
-        "stream": False,
-        "format": "json",
-        "think": False,
-        "options": {
-            "temperature": 0.1,
-            "num_ctx": args.ollama_num_ctx,
-        },
-    }
-    url = args.ollama_url.rstrip("/") + "/api/generate"
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=args.ollama_timeout) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Ollama request failed: {exc}") from exc
-    data = json.loads(raw)
-    text = data.get("response") or data.get("thinking") or ""
-    if not text.strip():
-        raise RuntimeError("Ollama returned an empty response")
-    return parse_json_response(text)
 
 
 def build_prompt(db, category, rows, article_char_limit=9000, claim_limit=80, baseline_char_limit=BASELINE_MAX_CHARS):
@@ -1257,47 +1093,6 @@ def build_prompt(db, category, rows, article_char_limit=9000, claim_limit=80, ba
   "updated_baseline_md": "최신 상황을 반영한 카테고리 누적 요약. {BASELINE_MAX_CHARS}자 이내."
 }}
 """
-
-
-def gemini_api_key():
-    config = load_config()
-    env = load_env_values()
-    return (
-        config.get("gemini_api_key")
-        or env.get("GEMINI_API_KEY")
-        or env.get("GOOGLE_API_KEY")
-        or os.environ.get("GEMINI_API_KEY")
-        or os.environ.get("GOOGLE_API_KEY")
-    )
-
-
-def ollama_status(base_url):
-    url = base_url.rstrip("/") + "/api/tags"
-    try:
-        with urllib.request.urlopen(url, timeout=5) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except Exception as exc:
-        return False, str(exc)
-    models = [item.get("name", "") for item in data.get("models", [])]
-    return True, ", ".join(models) if models else "running; no models installed"
-
-
-def parse_json_response(text):
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?", "", text).strip()
-    text = re.sub(r"```$", "", text).strip()
-    start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end >= start:
-        text = text[start : end + 1]
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        cleaned = "".join(
-            char if char in "\t\n\r" or ord(char) >= 0x20 else " "
-            for char in text
-        )
-        return json.loads(cleaned, strict=False)
 
 
 def most_similar_past_article(db, embedder, row, category):
@@ -1862,7 +1657,7 @@ def render_report(report_date, items, skipped):
             if item[1] in {"similarity", "same_day_similarity", "same_event_duplicate"}
         ]
         uncertain_rows = [item for item in skipped if item[1] == "category_uncertain"]
-        failed_rows = [item for item in skipped if str(item[1]).startswith("llm_failed")]
+        failed_rows = [item for item in skipped if str(item[1]).startswith("analysis_failed")]
 
         if similarity_rows:
             lines.append("## 걸러진 스트레이트/반복 기사")

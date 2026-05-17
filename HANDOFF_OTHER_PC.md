@@ -30,7 +30,7 @@ git pull origin main
 
 The production path is deterministic no-LLM reporting.
 
-Do not assume Gemini or Ollama is needed for the scheduled job. The scheduled job uses:
+Do not assume any LLM is needed for the scheduled job. The scheduled job uses:
 
 ```powershell
 python morning_report_task.py --date today --no-llm
@@ -46,15 +46,15 @@ Workflow: `.github/workflows/morning-report.yml`
 
 Schedules:
 
-- `06:07 KST`: initial report
-  - GitHub cron: `7 21 * * *`
+- `05:07 KST`: initial report
+  - GitHub cron: `7 20 * * *`
   - Includes report-date paper articles.
   - Includes online articles from previous day 18:00 through report date 06:00.
   - Sends Telegram report.
 
-- `07:55 KST`: online-only follow-up
-  - GitHub cron: `55 22 * * *`
-  - Checks online articles from 06:00 through 07:50.
+- `06:55 KST`: online-only follow-up
+  - GitHub cron: `55 21 * * *`
+  - Checks online articles from 06:00 through 06:50.
   - Sends `[추가 보고]` only if new report-worthy items exist.
   - Sends a separate feedback guide message after the follow-up run.
 
@@ -76,6 +76,11 @@ gh workflow run morning-report.yml --repo ggunglee/NaverPaperCrawler --ref main 
 Workflow: `.github/workflows/telegram-feedback.yml`
 
 Schedule:
+
+- `11:00 KST`
+  - GitHub cron: `0 2 * * *`
+  - Collects pending feedback commands.
+  - Sends `이민경 피드백 내놓으라고` if no feedback command has been collected for the day.
 
 - `12:00 KST`
   - GitHub cron: `0 3 * * *`
@@ -100,12 +105,7 @@ Recommended for broader online discovery:
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
 
-Currently optional:
-
-- `GEMINI_API_KEY`
-- `OLLAMA_URL`
-
-The scheduled production path is `--no-llm`, so Gemini/Ollama are not required.
+LLM secrets are not used. The reporting path is deterministic, and `--no-llm` is kept only as a compatibility flag for existing commands.
 
 ## Google Drive Secrets, If Added Later
 
@@ -241,9 +241,21 @@ Users can send feedback in Telegram with:
 
 /important
 앞으로 꼭 넣어야 할 기사 유형
+
+/include_keyword
+추가할 포함 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.
+
+/exclude_keyword
+추가할 배제 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.
+
+/remove_include_keyword
+삭제할 포함 키워드.
+
+/remove_exclude_keyword
+삭제할 배제 키워드.
 ```
 
-The noon workflow collects these commands. At this handoff, collection works, but feedback is not yet automatically converted into new code/rules. That is the next improvement area.
+The noon workflow collects these commands. Keyword commands are applied to runtime `config.json` immediately. Report rewrite commands such as `/final` and `/fix` are collected for review, but are not automatically converted into code changes yet.
 
 ## Local Validation Commands
 
@@ -282,7 +294,7 @@ Cleanup:
 
 ## Next Checks
 
-1. Confirm the next real scheduled `06:07 KST` run has `paper_total > 0` when Naver paper pages are available.
+1. Confirm the next real scheduled `05:07 KST` run starts early enough to deliver around the desired 06:00 window and has `paper_total > 0` when Naver paper pages are available.
 2. Add `NAVER_CLIENT_ID` and `NAVER_CLIENT_SECRET` GitHub Secrets if broader online discovery is needed.
 3. Decide whether GitHub Actions cache is enough, or whether Google Drive backup should be added with `GOOGLE_SERVICE_ACCOUNT_JSON` and `GOOGLE_DRIVE_FOLDER_ID`.
 4. Implement feedback-to-rule review:

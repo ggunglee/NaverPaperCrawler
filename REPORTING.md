@@ -8,7 +8,7 @@ The current production path is deterministic and does not call an LLM:
 venv\Scripts\python.exe morning_report_task.py --date today --send-telegram --force --no-llm
 ```
 
-GitHub Actions runs the initial report every day at 06:07 KST. A second online-only follow-up run checks 06:00-07:50 articles at 07:55 KST.
+GitHub Actions runs the initial report every day at 05:07 KST. A second online-only follow-up run checks 06:00-06:50 articles at 06:55 KST.
 Runtime SQLite data is restored and saved with GitHub Actions cache. It is pruned to the latest 30 days after each scheduled run.
 Old runtime cache entries are also pruned so only the five newest `naver-news-runtime-` caches remain.
 
@@ -16,13 +16,13 @@ Old runtime cache entries are also pruned so only the five newest `naver-news-ru
 
 - Paper articles: report date.
 - Online articles: previous day 18:00 through report date 06:00.
-- Online follow-up articles: report date 06:00 through 07:50, online-only.
+- Online follow-up articles: report date 06:00 through 06:50, online-only.
 - Output path: `%USERPROFILE%\.naver_news_crawler\reports\YYYYMMDD_morning_report.md`.
 - Delivery: Telegram.
 - Runtime cache path: `%USERPROFILE%\.naver_news_crawler`.
 - Retention: 30 days for articles, embeddings, exclusive claims, report runs, feedback DB rows, report files, and feedback JSON files.
 
-The crawler must collect articles first. LLMs, if ever enabled manually, are only for downstream selection/summarization. They should not replace clean crawling.
+The crawler must collect articles first. Report selection and summaries use deterministic rules, not local or hosted LLM calls.
 
 ## Keywords
 
@@ -219,6 +219,14 @@ Collect Telegram feedback commands:
 venv\Scripts\python.exe telegram_feedback.py
 ```
 
+At 11:00 KST the GitHub feedback workflow also runs:
+
+```bat
+venv\Scripts\python.exe telegram_feedback.py --remind-if-empty
+```
+
+If no feedback command has been collected that day, it sends `이민경 피드백 내놓으라고`.
+
 Prune runtime DB/cache data:
 
 ```bat
@@ -240,6 +248,18 @@ Feedback command formats:
 
 /important
 앞으로 꼭 넣어야 할 기사 유형
+
+/include_keyword
+추가할 포함 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.
+
+/exclude_keyword
+추가할 배제 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.
+
+/remove_include_keyword
+삭제할 포함 키워드.
+
+/remove_exclude_keyword
+삭제할 배제 키워드.
 ```
 
 ## Manual QA Checklist

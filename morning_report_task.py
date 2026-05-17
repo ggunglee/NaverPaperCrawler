@@ -21,18 +21,13 @@ def parse_args():
         "--mode",
         choices=["initial", "update"],
         default="initial",
-        help="initial sends the 06:00 report; update checks online articles from 06:00 to 07:50.",
+        help="initial sends the 06:00 report; update checks online articles from 06:00 to 06:50.",
     )
     parser.add_argument("--send-telegram", action="store_true", help="Send the generated report to Telegram.")
     parser.add_argument("--send-feedback-guide", action="store_true", help="Send feedback instructions after the report.")
     parser.add_argument("--force", action="store_true", help="Re-analyze already analyzed articles in the morning scope.")
     parser.add_argument("--no-crawl", action="store_true", help="Skip crawling and only generate/send from DB.")
-    parser.add_argument("--no-llm", action="store_true", help="Use deterministic extractive summaries without an LLM.")
-    parser.add_argument("--llm-backend", choices=["gemini", "ollama"], default=os.environ.get("REPORT_LLM_BACKEND", "ollama"))
-    parser.add_argument("--ollama-model", default=os.environ.get("OLLAMA_MODEL", "exaone3.5:2.4b"))
-    parser.add_argument("--ollama-timeout", type=int, default=int(os.environ.get("OLLAMA_TIMEOUT", "300")))
-    parser.add_argument("--ollama-num-ctx", type=int, default=int(os.environ.get("OLLAMA_NUM_CTX", "4096")))
-    parser.add_argument("--gemini-model", default=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
+    parser.add_argument("--no-llm", action="store_true", help="Compatibility flag; reports are always deterministic.")
     parser.add_argument("--embedding-backend", choices=["auto", "sentence", "lexical"], default="lexical")
     return parser.parse_args()
 
@@ -53,7 +48,7 @@ def online_window(report_date):
 def update_online_window(report_date):
     base = datetime.strptime(report_date, "%Y%m%d")
     start = datetime.combine(base.date(), time(6, 0))
-    end = datetime.combine(base.date(), time(7, 50))
+    end = datetime.combine(base.date(), time(6, 50))
     return start, end
 
 
@@ -135,13 +130,7 @@ def build_report(report_date, online_start, online_end, args):
         desk_focus=True,
         limit=None,
         output_file=True,
-        no_llm=args.no_llm,
-        llm_backend=args.llm_backend,
-        gemini_model=args.gemini_model,
-        ollama_model=args.ollama_model,
-        ollama_url=os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434"),
-        ollama_timeout=args.ollama_timeout,
-        ollama_num_ctx=args.ollama_num_ctx,
+        no_llm=True,
         embedding_backend=args.embedding_backend,
         similarity_threshold=0.85,
         same_day_threshold=0.85,
@@ -166,7 +155,19 @@ def feedback_guide_message():
 수정: 원하는 보고체 문장
 
 /important
-앞으로 꼭 넣어야 할 기사 유형"""
+앞으로 꼭 넣어야 할 기사 유형
+
+/include_keyword
+추가할 포함 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.
+
+/exclude_keyword
+추가할 배제 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.
+
+/remove_include_keyword
+삭제할 포함 키워드.
+
+/remove_exclude_keyword
+삭제할 배제 키워드."""
 
 
 def report_has_selected_items(report):

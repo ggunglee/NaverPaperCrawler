@@ -7,6 +7,8 @@ permissions:
 on:
   workflow_dispatch:
   schedule:
+    # 02:00 UTC is 11:00 KST. Remind if no feedback has arrived yet.
+    - cron: "0 2 * * *"
     # 03:00 UTC is 12:00 KST. Feedback is checked once after the morning report cycle.
     - cron: "0 3 * * *"
 
@@ -70,7 +72,11 @@ jobs:
 
       - name: Collect Telegram feedback
         run: |
-          python telegram_feedback.py --json-out qa/telegram_feedback.json
+          REMINDER_FLAG=""
+          if [ "${{ github.event.schedule }}" = "0 2 * * *" ]; then
+            REMINDER_FLAG="--remind-if-empty"
+          fi
+          python telegram_feedback.py --json-out qa/telegram_feedback.json $REMINDER_FLAG
 
       - name: Prune runtime data
         if: always()
