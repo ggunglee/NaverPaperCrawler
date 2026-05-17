@@ -81,7 +81,9 @@ def fetch_bodies_for_scope(db, report_date, online_start, online_end, force=Fals
         and online_start.strftime("%Y-%m-%d %H:%M:%S") <= row["published_at"] <= online_end.strftime("%Y-%m-%d %H:%M:%S")
     )
     seen = set()
+    attempted = 0
     fetched = 0
+    failed = 0
     for row in rows:
         if row["id"] in seen:
             continue
@@ -92,9 +94,12 @@ def fetch_bodies_for_scope(db, report_date, online_start, online_end, force=Fals
         if row["body"] and not force and not body_needs_refresh(row["body"]):
             continue
         should_force = force or body_needs_refresh(row["body"] or "")
+        attempted += 1
         if crawler.fetch_and_store_body(row["id"], force=should_force):
             fetched += 1
-    return fetched
+        else:
+            failed += 1
+    return {"candidates": len(seen), "attempted": attempted, "fetched": fetched, "failed": failed}
 
 
 def body_needs_refresh(body):
@@ -169,6 +174,9 @@ def feedback_guide_message():
 /important
 앞으로 꼭 넣어야 할 기사 유형
 
+/apply_feedback
+오후 3시 반영 확인 메시지에 대한 답변
+
 /include_keyword
 추가할 포함 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.
 
@@ -184,6 +192,24 @@ def feedback_guide_message():
 
 def report_has_selected_items(report):
     return any(line.startswith("※") for line in (report or "").splitlines())
+
+
+def body_fetch_warning(stats):
+    if not stats or not stats.get("failed"):
+        return ""
+    return "\n".join(
+        [
+            "[아침보고 오류 알림]",
+            "",
+            "- 단계: 본문 크롤링",
+            "- 상태: 일부 실패",
+            f"- 후보 기사: {stats.get('candidates', 0)}건",
+            f"- 본문 수집 시도: {stats.get('attempted', 0)}건",
+            f"- 성공: {stats.get('fetched', 0)}건",
+            f"- 실패: {stats.get('failed', 0)}건",
+            "- 영향: 일부 기사는 제목/요약 중심으로 판단됐을 수 있음",
+        ]
+    )
 
 
 def telegram_credentials():
@@ -258,7 +284,7 @@ def main():
         else:
             paper = NaverPaperCrawler(db).crawl_date(report_date)
         online = crawl_online_candidates(db, online_start, online_end, exclude_keywords=load_exclude_keywords())
-        fetched = fetch_bodies_for_scope(
+        body_stats = fetch_bodies_for_scope(
             db,
             report_date,
             online_start,
@@ -269,7 +295,9 @@ def main():
         print(
             f"mode={args.mode} "
             f"paper_total={paper['total']} paper_inserted={paper['inserted']} "
-            f"online_total={online['total']} online_inserted={online['inserted']} body_fetched={fetched}"
+            f"online_total={online['total']} online_inserted={online['inserted']} "
+            f"body_candidates={body_stats['candidates']} body_attempted={body_stats['attempted']} "
+            f"body_fetched={body_stats['fetched']} body_failed={body_stats['failed']}"
         )
 
     report = build_report(report_date, online_start, online_end, args)
@@ -283,6 +311,9 @@ def main():
             send_telegram(telegram_report)
         else:
             print("telegram_report_skipped=no_update_items")
+        warning = body_fetch_warning(body_stats if not args.no_crawl else {})
+        if warning:
+            send_telegram(warning)
         if args.send_feedback_guide:
             send_telegram(feedback_guide_message())
         print("telegram_sent=1")

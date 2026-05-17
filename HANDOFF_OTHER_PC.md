@@ -87,6 +87,16 @@ Schedule:
   - Collects feedback commands from Telegram.
   - Stores collected messages in SQLite and JSON artifacts.
 
+- `15:00 KST`
+  - GitHub cron: `0 6 * * *`
+  - Compares `/final` with the archived initial draft.
+  - Sends a Telegram proposal asking how to apply the differences.
+
+- `23:30 KST`
+  - GitHub cron: `30 14 * * *`
+  - Collects `/apply_feedback` answers.
+  - Saves approved feedback memory to `feedback_rules.json`.
+
 Manual run:
 
 ```powershell
@@ -146,11 +156,13 @@ https://docs.google.com/document/d/1k2BSnYBZfgat311DaHSxLml_mvXTvVeeHZ3CrjZ-BtQ
 
 ## Runtime Persistence
 
-GitHub runners are ephemeral. The repo now persists runtime state using GitHub Actions cache:
+GitHub runners are ephemeral. The repo persists runtime state with Google Drive first and GitHub Actions cache as a secondary continuity layer:
 
+- Google Drive backup: `naver-runtime-backup-YYYYMMDDTHHMMSSZ.zip`
+- Restored at workflow startup with `backup_runtime_data.py --restore --skip-if-unconfigured`
+- Uploaded at workflow end with `backup_runtime_data.py --skip-if-unconfigured --keep 14`
 - Cache path: `~/.naver_news_crawler`
 - Cache key prefix: `naver-news-runtime-`
-- Restored with `restore-keys: naver-news-runtime-`
 
 The cache contains:
 
@@ -161,6 +173,9 @@ The cache contains:
 - `article_analysis`
 - `report_runs`
 - `telegram_feedback.db`
+- `config.json`
+- `feedback_rules.json`
+- `feedback_review_state.json`
 - generated reports and feedback JSONs
 - mode-specific report archives such as `YYYYMMDD_initial_morning_report.md`
 
@@ -170,7 +185,7 @@ Cleanup:
 - Keeps only the latest 30 days of runtime DB rows and report/feedback files.
 - Workflows also prune old runtime cache entries, keeping the 5 newest `naver-news-runtime-` caches.
 
-Important: artifacts are for inspection, not persistence. The runtime cache is the persistence layer.
+Important: artifacts are for inspection, not persistence. Google Drive backup is the durable persistence layer; cache is a convenience fallback.
 
 ## Verified GitHub Runs
 
@@ -252,6 +267,9 @@ Users can send feedback in Telegram with:
 /important
 앞으로 꼭 넣어야 할 기사 유형
 
+/apply_feedback
+오후 3시 반영 확인 메시지에 대한 답변
+
 /include_keyword
 추가할 포함 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.
 
@@ -265,7 +283,7 @@ Users can send feedback in Telegram with:
 삭제할 배제 키워드.
 ```
 
-The noon workflow collects these commands. Keyword commands are applied to runtime `config.json` immediately. Report rewrite commands such as `/final` and `/fix` are collected for review, but are not automatically converted into code changes yet.
+The feedback workflow collects these commands. Keyword commands are applied to runtime `config.json` immediately. `/final` and `/fix` are collected for review. `/final` differences are proposed at 15:00 KST, and `/apply_feedback` answers are saved at 23:30 KST as runtime rules, not code changes.
 
 ## Local Validation Commands
 

@@ -11,7 +11,7 @@ venv\Scripts\python.exe morning_report_task.py --date today --send-telegram --fo
 GitHub Actions runs the initial report every day at 05:07 KST. A second online-only follow-up run checks 06:00-06:50 articles at 06:55 KST.
 Runtime SQLite data is restored and saved with GitHub Actions cache. It is pruned to the latest 30 days after each scheduled run.
 Old runtime cache entries are also pruned so only the five newest `naver-news-runtime-` caches remain.
-If Google Drive secrets are configured, each morning/feedback run also uploads a zipped runtime backup and keeps the latest 14 Drive backups. Personal My Drive folders need OAuth user secrets; service-account JSON works for Workspace Shared Drives, not normal personal folders.
+If Google Drive secrets are configured, each morning/feedback run restores the latest zipped runtime backup at startup, uploads a fresh runtime backup at the end, and keeps the latest 14 Drive backups. Personal My Drive folders need OAuth user secrets; service-account JSON works for Workspace Shared Drives, not normal personal folders.
 
 ## Scope
 
@@ -235,6 +235,12 @@ Back up runtime data to Google Drive:
 venv\Scripts\python.exe backup_runtime_data.py --skip-if-unconfigured --keep 14
 ```
 
+Restore the latest Google Drive runtime backup:
+
+```bat
+venv\Scripts\python.exe backup_runtime_data.py --restore --skip-if-unconfigured
+```
+
 GitHub Secrets for a personal My Drive folder:
 
 - `GOOGLE_DRIVE_FOLDER_ID`
@@ -254,6 +260,14 @@ venv\Scripts\python.exe telegram_feedback.py --remind-if-empty
 ```
 
 If no feedback command has been collected that day, it sends `이민경 피드백 내놓으라고`.
+
+At 15:00 KST the feedback workflow compares `/final` against the archived initial draft and sends a Telegram proposal asking how to apply the differences. At 23:30 KST it collects `/apply_feedback` responses and saves approved feedback memory to `%USERPROFILE%\.naver_news_crawler\feedback_rules.json`.
+
+Approved feedback rules are not code edits. They are runtime memory restored from Google Drive and used as report-selection hints:
+
+- approved added items become include-strengthening hints;
+- approved removed items become exclude/demotion hints;
+- the user's `/apply_feedback` text is stored for audit.
 
 Prune runtime DB/cache data:
 
@@ -276,6 +290,9 @@ Feedback command formats:
 
 /important
 앞으로 꼭 넣어야 할 기사 유형
+
+/apply_feedback
+오후 3시 반영 확인 메시지에 대한 답변
 
 /include_keyword
 추가할 포함 키워드. 여러 개는 줄바꿈 또는 쉼표로 구분.

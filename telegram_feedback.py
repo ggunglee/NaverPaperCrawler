@@ -26,6 +26,7 @@ FEEDBACK_COMMANDS = (
     "/exclude",
     "/fix",
     "/important",
+    "/apply_feedback",
     "/include_keyword",
     "/include_keywords",
     "/exclude_keyword",

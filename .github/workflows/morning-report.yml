@@ -54,6 +54,11 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Install Drive restore dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install google-auth requests
+
       - name: Restore runtime data cache
         uses: actions/cache@v4
         with:
@@ -61,6 +66,12 @@ jobs:
           key: naver-news-runtime-${{ github.run_id }}
           restore-keys: |
             naver-news-runtime-
+
+      - name: Restore runtime data from Google Drive
+        id: drive_restore
+        continue-on-error: true
+        run: |
+          python backup_runtime_data.py --restore --skip-if-unconfigured
 
       - name: Prune old runtime caches
         env:
@@ -102,6 +113,7 @@ jobs:
           python -m pip install -r requirements.txt -r requirements-report.txt
 
       - name: Generate morning report
+        id: generate
         run: |
           SEND_FLAG="--send-telegram"
           MODE="initial"
@@ -122,6 +134,7 @@ jobs:
           python morning_report_task.py --date today --mode "$MODE" $SEND_FLAG $FEEDBACK_FLAG $EXTRA_FLAGS --no-llm
 
       - name: Summarize generated report
+        id: summarize
         if: always()
         run: |
           python - <<'PY'
@@ -169,10 +182,31 @@ jobs:
           python cleanup_runtime_data.py --days 30
 
       - name: Back up runtime data to Google Drive
+        id: drive_backup
         if: always()
         continue-on-error: true
         run: |
           python backup_runtime_data.py --skip-if-unconfigured --keep 14
+
+      - name: Alert operational issue
+        if: >-
+          ${{
+            always() &&
+            (steps.drive_restore.outcome == 'failure' ||
+             steps.generate.outcome == 'failure' ||
+             steps.summarize.outcome == 'failure' ||
+             steps.drive_backup.outcome == 'failure') &&
+            (github.event_name != 'workflow_dispatch' || inputs.send_telegram == 'true')
+          }}
+        run: |
+          python notify_telegram.py \
+            --title "[아침보고 오류 알림]" \
+            --message "GitHub Actions 실행 중 점검이 필요한 단계가 있습니다.
+          - Drive 복원: ${{ steps.drive_restore.outcome }}
+          - 보고 생성: ${{ steps.generate.outcome }}
+          - QA 요약: ${{ steps.summarize.outcome }}
+          - Drive 백업: ${{ steps.drive_backup.outcome }}
+          - 실행: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Upload report artifacts
         if: always()
@@ -183,6 +217,9 @@ jobs:
             ~/.naver_news_crawler/reports/*_morning_report.md
             ~/.naver_news_crawler/data/*.db
             ~/.naver_news_crawler/logs/*.log
+            ~/.naver_news_crawler/config.json
+            ~/.naver_news_crawler/feedback_rules.json
+            ~/.naver_news_crawler/feedback_review_state.json
             qa/*.json
           if-no-files-found: warn
           retention-days: 14

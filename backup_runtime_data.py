@@ -2,6 +2,7 @@ import argparse
 import json
 import mimetypes
 import os
+import shutil
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ def parse_args():
     parser.add_argument("--runtime-dir", type=Path, default=SAFE_DIR)
     parser.add_argument("--keep", type=int, default=14, help="Number of Drive backups to keep.")
     parser.add_argument("--skip-if-unconfigured", action="store_true")
+    parser.add_argument("--restore", action="store_true", help="Restore the latest runtime backup from Google Drive.")
     return parser.parse_args()
 
 
@@ -85,6 +87,10 @@ def create_backup_zip(runtime_dir):
             for path in root.rglob("*"):
                 if path.is_file():
                     archive.write(path, path.relative_to(runtime_dir))
+        for name in ["config.json", "feedback_rules.json", "feedback_review_state.json"]:
+            path = runtime_dir / name
+            if path.is_file():
+                archive.write(path, path.relative_to(runtime_dir))
     return output
 
 
@@ -155,7 +161,7 @@ def list_backups(token, folder_id):
         headers=drive_headers(token),
         params={
             "q": query,
-            "fields": "files(id,name,createdTime)",
+            "fields": "files(id,name,createdTime,size)",
             "orderBy": "createdTime desc",
             "pageSize": 100,
             "supportsAllDrives": "true",
@@ -165,6 +171,56 @@ def list_backups(token, folder_id):
     )
     raise_for_google_status(response, "list")
     return response.json().get("files", [])
+
+
+def download_file(token, file_id, output_path):
+    response = requests.get(
+        f"https://www.googleapis.com/drive/v3/files/{file_id}",
+        headers=drive_headers(token),
+        params={"alt": "media", "supportsAllDrives": "true"},
+        timeout=120,
+    )
+    raise_for_google_status(response, "download")
+    output_path.write_bytes(response.content)
+    return output_path
+
+
+def safe_extract_zip(zip_path, runtime_dir):
+    runtime_dir = runtime_dir.expanduser().resolve()
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as archive:
+        for member in archive.infolist():
+            member_path = Path(member.filename)
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise RuntimeError(f"unsafe_backup_member path={member.filename}")
+        temp_dir = Path(tempfile.mkdtemp(prefix="naver-runtime-restore-"))
+        try:
+            archive.extractall(temp_dir)
+            for path in temp_dir.rglob("*"):
+                if not path.is_file():
+                    continue
+                relative = path.relative_to(temp_dir)
+                target = runtime_dir / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, target)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def restore_latest_backup(token, folder_id, runtime_dir):
+    backups = list_backups(token, folder_id)
+    if not backups:
+        print("google_drive_restore_skipped=no_backups")
+        return 0
+    latest = backups[0]
+    output = Path(tempfile.gettempdir()) / latest["name"]
+    download_file(token, latest["id"], output)
+    safe_extract_zip(output, runtime_dir)
+    print(
+        f"google_drive_restore_completed id={latest.get('id')} "
+        f"name={latest.get('name')} size={latest.get('size')} backups_seen={len(backups)}"
+    )
+    return len(backups)
 
 
 def prune_backups(token, folder_id, keep):
@@ -194,6 +250,9 @@ def main():
         raise SystemExit(message)
     token = access_token()
     folder_id = os.environ["GOOGLE_DRIVE_FOLDER_ID"]
+    if args.restore:
+        restore_latest_backup(token, folder_id, args.runtime_dir)
+        return 0
     backup = create_backup_zip(args.runtime_dir)
     uploaded = upload_file(token, folder_id, backup)
     seen, deleted = prune_backups(token, folder_id, args.keep)

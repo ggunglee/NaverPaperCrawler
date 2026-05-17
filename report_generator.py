@@ -14,10 +14,41 @@ from database import Database
 
 
 REPORT_DIR = SAFE_DIR / "reports"
+FEEDBACK_RULES_PATH = SAFE_DIR / "feedback_rules.json"
 EMBEDDING_MODEL = "jhgan/ko-sroberta-multitask"
 SIMILARITY_THRESHOLD = 0.85
 EXCLUSIVE_THRESHOLD = 0.82
 BASELINE_MAX_CHARS = 5000
+_FEEDBACK_RULE_TERMS = None
+
+
+def load_feedback_rule_terms():
+    global _FEEDBACK_RULE_TERMS
+    if _FEEDBACK_RULE_TERMS is not None:
+        return _FEEDBACK_RULE_TERMS
+    terms = {"include": [], "exclude": []}
+    if FEEDBACK_RULES_PATH.exists():
+        try:
+            payload = json.loads(FEEDBACK_RULES_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        for rule in payload.get("rules", []):
+            if rule.get("status") != "approved":
+                continue
+            terms["include"].extend(rule.get("include_terms") or [])
+            terms["exclude"].extend(rule.get("exclude_terms") or [])
+    for key, values in terms.items():
+        seen = set()
+        normalized = []
+        for value in values:
+            text = str(value).strip()
+            if len(text) < 2 or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+        terms[key] = normalized
+    _FEEDBACK_RULE_TERMS = terms
+    return terms
 
 KNOWN_CATEGORIES = {
     "2차 종합특검": [
@@ -1282,7 +1313,12 @@ def recommend_category(row):
 
 def matches_monitor_keywords(row):
     text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{row['body'] or ''}"
-    return any(keyword in text for keyword in MONITOR_KEYWORDS)
+    feedback_terms = load_feedback_rule_terms()
+    if any(keyword in text for keyword in feedback_terms["exclude"]):
+        return False
+    return any(keyword in text for keyword in MONITOR_KEYWORDS) or any(
+        keyword in text for keyword in feedback_terms["include"]
+    )
 
 
 def is_police_led_article(row):
@@ -1359,6 +1395,9 @@ def is_desk_focus_article(row):
     title = row["title"] or ""
     section = row["paper_section"] or ""
     text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    feedback_terms = load_feedback_rule_terms()
+    if any(term in text for term in feedback_terms["exclude"]):
+        return False
     if (row["article_type"] or "") == "지면" and re.match(r"^[BCD]\d+", section):
         return False
     if any(term in title for term in ["살해", "살인", "폭행", "음주운전"]) and not any(
@@ -1439,7 +1478,7 @@ def is_desk_focus_article(row):
         "공판",
         "재판",
     ]
-    if any(term in text for term in strong_terms):
+    if any(term in text for term in strong_terms) or any(term in text for term in feedback_terms["include"]):
         return True
     return "단독" in title and matches_monitor_keywords(row)
 

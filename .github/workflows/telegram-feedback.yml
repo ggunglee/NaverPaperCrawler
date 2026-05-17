@@ -21,6 +21,10 @@ on:
     - cron: "0 2 * * *"
     # 03:00 UTC is 12:00 KST. Feedback is checked once after the morning report cycle.
     - cron: "0 3 * * *"
+    # 06:00 UTC is 15:00 KST. Send a feedback-application proposal if /final was received.
+    - cron: "0 6 * * *"
+    # 14:30 UTC is 23:30 KST. Apply approved feedback instructions before midnight.
+    - cron: "30 14 * * *"
 
 jobs:
   collect:
@@ -55,6 +59,12 @@ jobs:
           key: naver-news-runtime-${{ github.run_id }}
           restore-keys: |
             naver-news-runtime-
+
+      - name: Restore runtime data from Google Drive
+        id: drive_restore
+        continue-on-error: true
+        run: |
+          python backup_runtime_data.py --restore --skip-if-unconfigured
 
       - name: Prune old runtime caches
         env:
@@ -91,6 +101,7 @@ jobs:
           PY
 
       - name: Collect Telegram feedback
+        id: collect_feedback
         run: |
           REMINDER_FLAG=""
           if [ "${{ github.event.schedule }}" = "0 2 * * *" ]; then
@@ -102,10 +113,24 @@ jobs:
           python telegram_feedback.py --json-out qa/telegram_feedback.json $REMINDER_FLAG
 
       - name: Review feedback against draft report
+        id: review_feedback
         run: |
           python feedback_review.py --feedback-json qa/telegram_feedback.json --report-date today --json-out qa/feedback_review.json --markdown-out qa/feedback_review.md
 
+      - name: Send feedback application proposal
+        id: feedback_proposal
+        if: ${{ github.event.schedule == '0 6 * * *' }}
+        run: |
+          python feedback_decision.py --mode propose --feedback-json qa/telegram_feedback.json --review-json qa/feedback_review.json --report-date today
+
+      - name: Apply approved feedback instructions
+        id: feedback_apply
+        if: ${{ github.event.schedule == '30 14 * * *' }}
+        run: |
+          python feedback_decision.py --mode apply --feedback-json qa/telegram_feedback.json --review-json qa/feedback_review.json --report-date today
+
       - name: Open feedback review issue
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -145,10 +170,34 @@ jobs:
           python cleanup_runtime_data.py --days 30
 
       - name: Back up runtime data to Google Drive
+        id: drive_backup
         if: always()
         continue-on-error: true
         run: |
           python backup_runtime_data.py --skip-if-unconfigured --keep 14
+
+      - name: Alert feedback operational issue
+        if: >-
+          ${{
+            always() &&
+            (steps.drive_restore.outcome == 'failure' ||
+             steps.collect_feedback.outcome == 'failure' ||
+             steps.review_feedback.outcome == 'failure' ||
+             steps.feedback_proposal.outcome == 'failure' ||
+             steps.feedback_apply.outcome == 'failure' ||
+             steps.drive_backup.outcome == 'failure')
+          }}
+        run: |
+          python notify_telegram.py \
+            --title "[피드백 처리 오류 알림]" \
+            --message "GitHub Actions 실행 중 점검이 필요한 단계가 있습니다.
+          - Drive 복원: ${{ steps.drive_restore.outcome }}
+          - 피드백 수집: ${{ steps.collect_feedback.outcome }}
+          - 피드백 분석: ${{ steps.review_feedback.outcome }}
+          - 반영 제안: ${{ steps.feedback_proposal.outcome }}
+          - 반영 저장: ${{ steps.feedback_apply.outcome }}
+          - Drive 백업: ${{ steps.drive_backup.outcome }}
+          - 실행: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Upload feedback artifacts
         if: always()
@@ -161,5 +210,7 @@ jobs:
             qa/telegram_feedback.json
             qa/feedback_review.json
             qa/feedback_review.md
+            ~/.naver_news_crawler/feedback_rules.json
+            ~/.naver_news_crawler/feedback_review_state.json
           if-no-files-found: warn
           retention-days: 30
