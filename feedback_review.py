@@ -16,6 +16,7 @@ def parse_args():
     parser.add_argument("--report-date", default="today")
     parser.add_argument("--reports-dir", type=Path, default=SAFE_DIR / "reports")
     parser.add_argument("--json-out", type=Path, required=True)
+    parser.add_argument("--markdown-out", type=Path)
     return parser.parse_args()
 
 
@@ -113,6 +114,71 @@ def review_hints(added, removed, changed):
     return hints
 
 
+def suggested_rule_changes(added, removed, changed):
+    suggestions = []
+    for item in added:
+        suggestions.append(
+            {
+                "type": "force_include_candidate",
+                "headline": item.get("headline", ""),
+                "url": item.get("url", ""),
+                "reason": "User final report included this item while the draft missed it.",
+            }
+        )
+    for item in removed:
+        suggestions.append(
+            {
+                "type": "force_exclude_or_demote_candidate",
+                "headline": item.get("headline", ""),
+                "url": item.get("url", ""),
+                "reason": "User final report omitted this draft item.",
+            }
+        )
+    for item in changed:
+        suggestions.append(
+            {
+                "type": "summary_style_candidate",
+                "headline": item["final"].get("headline", ""),
+                "url": item["final"].get("url", ""),
+                "reason": "User final report rewrote this retained item's summary.",
+            }
+        )
+    return suggestions
+
+
+def markdown_summary(output):
+    lines = [
+        f"# Feedback Review {output['report_date']}",
+        "",
+        f"- Feedback messages: {output['feedback_count']}",
+        f"- Final feedback messages: {output['final_feedback_count']}",
+        f"- Draft items: {output['draft_item_count']}",
+        f"- Final items: {output['final_item_count']}",
+        f"- Added by user: {len(output['added_items'])}",
+        f"- Removed by user: {len(output['removed_items'])}",
+        f"- Summary rewrites: {len(output['changed_items'])}",
+        "",
+    ]
+    if output.get("draft_report_path"):
+        lines.append(f"Draft report: `{output['draft_report_path']}`")
+        lines.append("")
+    if output["review_hints"]:
+        lines.append("## Review Hints")
+        lines.append("")
+        for hint in output["review_hints"]:
+            lines.append(f"- `{hint['type']}` ({hint['count']}): {hint['message']}")
+        lines.append("")
+    if output["suggested_rule_changes"]:
+        lines.append("## Suggested Rule Changes")
+        lines.append("")
+        for suggestion in output["suggested_rule_changes"]:
+            lines.append(f"- `{suggestion['type']}` {suggestion['headline']}")
+            if suggestion.get("url"):
+                lines.append(f"  {suggestion['url']}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def main():
     args = parse_args()
     report_date = report_date_value(args.report_date)
@@ -131,12 +197,17 @@ def main():
         "removed_items": removed,
         "changed_items": changed,
         "review_hints": review_hints(added, removed, changed),
+        "suggested_rule_changes": suggested_rule_changes(added, removed, changed),
     }
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
     args.json_out.write_text(json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if args.markdown_out:
+        args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_out.write_text(markdown_summary(output), encoding="utf-8")
     print(
         f"feedback_review final_items={len(final_items)} draft_items={len(draft_items)} "
-        f"added={len(added)} removed={len(removed)} changed={len(changed)} json={args.json_out}"
+        f"added={len(added)} removed={len(removed)} changed={len(changed)} "
+        f"suggestions={len(output['suggested_rule_changes'])} json={args.json_out}"
     )
     return 0
 

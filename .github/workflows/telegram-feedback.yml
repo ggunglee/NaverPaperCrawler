@@ -3,6 +3,7 @@ name: Telegram Feedback
 permissions:
   contents: read
   actions: write
+  issues: write
 
 on:
   workflow_dispatch:
@@ -92,7 +93,41 @@ jobs:
 
       - name: Review feedback against draft report
         run: |
-          python feedback_review.py --feedback-json qa/telegram_feedback.json --report-date today --json-out qa/feedback_review.json
+          python feedback_review.py --feedback-json qa/telegram_feedback.json --report-date today --json-out qa/feedback_review.json --markdown-out qa/feedback_review.md
+
+      - name: Open feedback review issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          review_path = Path("qa/feedback_review.json")
+          md_path = Path("qa/feedback_review.md")
+          if not review_path.exists():
+              print("feedback_review_issue_skipped=no_json")
+              raise SystemExit(0)
+          review = json.loads(review_path.read_text(encoding="utf-8"))
+          if not review.get("suggested_rule_changes"):
+              print("feedback_review_issue_skipped=no_suggestions")
+              raise SystemExit(0)
+          title = f"Feedback review {review.get('report_date')} run {os.environ.get('GITHUB_RUN_ID')}"
+          body = md_path.read_text(encoding="utf-8") if md_path.exists() else json.dumps(review, ensure_ascii=False, indent=2)
+          body += f"\n\nWorkflow run: {os.environ.get('GITHUB_SERVER_URL')}/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ.get('GITHUB_RUN_ID')}\n"
+          subprocess.run(["gh", "label", "create", "feedback-review", "--color", "5319e7"], check=False)
+          create_cmd = ["gh", "issue", "create", "--title", title, "--body", body, "--label", "feedback-review"]
+          result = subprocess.run(create_cmd, text=True, capture_output=True)
+          if result.returncode != 0:
+              print(result.stdout)
+              print(result.stderr)
+              subprocess.run(["gh", "issue", "create", "--title", title, "--body", body], check=True)
+          else:
+              print(result.stdout)
+          print("feedback_review_issue_created=1")
+          PY
 
       - name: Prune runtime data
         if: always()
@@ -109,5 +144,6 @@ jobs:
             ~/.naver_news_crawler/feedback/*.json
             qa/telegram_feedback.json
             qa/feedback_review.json
+            qa/feedback_review.md
           if-no-files-found: warn
           retention-days: 30

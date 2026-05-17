@@ -226,6 +226,8 @@ Review collected feedback against the archived initial draft:
 venv\Scripts\python.exe feedback_review.py --feedback-json qa/telegram_feedback.json --report-date today --json-out qa/feedback_review.json
 ```
 
+The GitHub workflow also writes `qa/feedback_review.md` and opens a `feedback-review` issue when rule-change candidates exist. These issues are review queues, not automatic code changes.
+
 At 11:00 KST the GitHub feedback workflow also runs:
 
 ```bat
