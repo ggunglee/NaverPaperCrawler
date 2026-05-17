@@ -129,6 +129,13 @@ Optional:
 - `GOOGLE_DRIVE_QA_DOC_ID`
   - Use only if GitHub Actions should write directly to a Google Doc.
 
+Runtime backups can use Google Drive when these GitHub Secrets are configured:
+
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `GOOGLE_DRIVE_FOLDER_ID`
+
+The backup workflow uploads `naver-runtime-backup-YYYYMMDDTHHMMSSZ.zip` and keeps the latest 14 backup zips.
+
 Current QA log doc used manually through the Google Drive connector:
 
 ```text
@@ -271,7 +278,7 @@ py -3 -m venv venv
 Compile check:
 
 ```powershell
-.\venv\Scripts\python.exe -m py_compile morning_report_task.py report_generator.py report_qa.py telegram_feedback.py feedback_review.py cleanup_runtime_data.py
+.\venv\Scripts\python.exe -m py_compile morning_report_task.py report_generator.py report_qa.py telegram_feedback.py feedback_review.py backup_runtime_data.py cleanup_runtime_data.py
 ```
 
 Generate without Telegram:

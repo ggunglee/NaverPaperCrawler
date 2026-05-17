@@ -1,2 +1,3 @@
+google-auth>=2.40
 kss>=6.0
 numpy>=1.26

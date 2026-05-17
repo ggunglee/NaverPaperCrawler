@@ -41,6 +41,8 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -162,6 +164,12 @@ jobs:
         if: always()
         run: |
           python cleanup_runtime_data.py --days 30
+
+      - name: Back up runtime data to Google Drive
+        if: always()
+        continue-on-error: true
+        run: |
+          python backup_runtime_data.py --skip-if-unconfigured --keep 14
 
       - name: Upload report artifacts
         if: always()
