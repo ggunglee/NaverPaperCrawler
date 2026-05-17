@@ -151,6 +151,7 @@ MONITOR_KEYWORDS = sorted(
         "서울중앙지검",
         "서울고검",
         "법무부",
+        "서울고등법원",
         "공수처",
         "검찰",
         "법원",
@@ -183,7 +184,7 @@ KNOWN_CATEGORIES = {
     "검찰 처분": ["불기소", "약식기소", "기소", "고소", "각하", "서울중앙지검", "서울고검"],
     "검찰 감찰": ["감찰", "감찰위", "대검", "박상용", "연어", "술 파티"],
     "법무부": ["법무부", "비자", "출입국", "체류", "귀화"],
-    "법원": ["법원", "대법원", "대법", "서울중앙지법", "서울고법", "행정법원", "회생법원", "가정법원"],
+    "법원": ["법원", "대법원", "대법", "서울중앙지법", "서울고법", "서울고등법원", "행정법원", "회생법원", "가정법원"],
     "헌법재판": ["헌법재판소", "헌재"],
     "법조 제도": ["변협", "대한변호사협회", "서울지방변호사회", "회생", "파산", "변호사"],
     "공수처": ["공수처", "고위공직자범죄수사처"],
@@ -212,6 +213,7 @@ MONITOR_KEYWORDS = sorted(
         "서울중앙지검",
         "서울고검",
         "법무부",
+        "서울고등법원",
         "공수처",
         "검찰",
         "법원",
@@ -238,6 +240,19 @@ MONITOR_KEYWORDS = sorted(
     key=len,
     reverse=True,
 )
+
+MANDATORY_LEGAL_INSTITUTIONS = [
+    "서울중앙지검",
+    "서울중앙지법",
+    "서울중앙지방법원",
+    "대법원",
+    "대법",
+    "헌법재판소",
+    "헌재",
+    "법무부",
+    "서울고등법원",
+    "서울고법",
+]
 
 
 SCHEMA_STATEMENTS = [
@@ -1364,6 +1379,7 @@ def is_foreign_incidental_article(row):
         "서울고검",
         "서울중앙지법",
         "서울고법",
+        "서울고등법원",
         "서울행정법원",
         "김건희",
         "윤석열",
@@ -1391,6 +1407,58 @@ def is_lifestyle_legal_advice(row):
     return "라디오" in text and any(term in text for term in ["상담", "사연", "생활법률"])
 
 
+def is_routine_election_politics(row):
+    title = row["title"] or ""
+    section = row["paper_section"] or ""
+    text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    if section != "정치" and not any(term in text for term in ["선거", "지선", "후보", "유세", "선거사무소", "출정식"]):
+        return False
+    election_terms = [
+        "후보",
+        "선거",
+        "지선",
+        "재선거",
+        "보궐선거",
+        "유세",
+        "선거사무소",
+        "개소식",
+        "출정식",
+        "적통 경쟁",
+        "단일화",
+        "공약",
+        "정당",
+        "민주당",
+        "국민의힘",
+        "조국혁신당",
+        "진보당",
+    ]
+    if not any(term in text for term in election_terms):
+        return False
+    substantive_legal_terms = [
+        "보완수사권",
+        "중수청",
+        "공소청",
+        "검찰청 폐지",
+        "수사권 조정",
+        "공소취소",
+        "특검법",
+        "조작기소 특검",
+        "압수수색",
+        "구속영장",
+        "대법 판결",
+        "헌재 결정",
+        "법원 판결",
+    ]
+    if any(term in title for term in substantive_legal_terms):
+        return False
+    return True
+
+
+def has_mandatory_legal_institution(row):
+    lead_text = f"{row['title'] or ''}\n{row['summary'] or ''}"
+    return any(term in lead_text for term in MANDATORY_LEGAL_INSTITUTIONS)
+
+
 def is_desk_focus_article(row):
     title = row["title"] or ""
     section = row["paper_section"] or ""
@@ -1398,10 +1466,31 @@ def is_desk_focus_article(row):
     feedback_terms = load_feedback_rule_terms()
     if any(term in text for term in feedback_terms["exclude"]):
         return False
+    if has_mandatory_legal_institution(row):
+        return True
     if (row["article_type"] or "") == "지면" and re.match(r"^[BCD]\d+", section):
         return False
+    if is_routine_election_politics(row):
+        return False
+    legal_process_terms = [
+        "검찰",
+        "법원",
+        "법무부",
+        "공수처",
+        "특검",
+        "대법",
+        "헌재",
+        "양형",
+        "양형기준",
+        "처벌 기준",
+        "판결",
+        "선고",
+        "구형",
+        "기소",
+        "불기소",
+    ]
     if any(term in title for term in ["살해", "살인", "폭행", "음주운전"]) and not any(
-        term in title for term in ["검찰", "법원", "법무부", "공수처", "특검"]
+        term in text for term in legal_process_terms
     ):
         return False
     exclude_terms = [
@@ -1477,6 +1566,15 @@ def is_desk_focus_article(row):
         "알선수재",
         "공판",
         "재판",
+        "대법",
+        "대법원",
+        "헌재",
+        "헌법재판소",
+        "양형",
+        "양형기준",
+        "처벌 기준",
+        "파기환송",
+        "국가 배상",
     ]
     if any(term in text for term in strong_terms) or any(term in text for term in feedback_terms["include"]):
         return True

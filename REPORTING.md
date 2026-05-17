@@ -34,11 +34,12 @@ The legal-monitoring keywords are:
 - `서울중앙지검`, `서울고검`, `법무부`, `공수처`
 - `검찰`, `법원`, `특검`
 - `행정법원`, `회생법원`, `가정법원`
-- `서울중앙지법`, `서울고법`
+- `서울중앙지법`, `서울고법`, `서울고등법원`
 - `변협`, `대한변호사협회`, `서울지방변호사회`
 
 Additional strong legal-report signals include:
 
+- Mandatory institution-led items: `서울중앙지검`, `서울중앙지법`, `대법원`, `헌법재판소`, `법무부`, `서울고등법원`
 - `불기소`, `약식기소`, `기소`, `감찰`, `감찰위`
 - `보완수사권`, `중수청`, `공소청`, `검찰개혁`
 - `비자`, `출입국`, `체류변경`
@@ -75,6 +76,7 @@ Exclude from selected report items:
 - Opinion/editorial/column items unless they contain a concrete legal-policy development.
 - Election-campaign diary items such as campaign-office openings, launch events, stump speeches, and routine candidate moves.
 - Political rally or partisan attack items where legal words appear only as rhetoric, such as 사법쿠데타, 조작기소, 하야 집회. Polling stories can remain if the legal issue is the substance of the poll.
+- Routine election or candidate-competition stories should be excluded when prosecution/legal words appear only as biographical history, campaign slogans, or incidental interview remarks.
 - Business, industry, shopping, tourism, or culture stories with merely incidental legal wording.
 - Non-legal policy stories that only contain phrases such as `법적 근거`.
 - Legal-advice/lifestyle items such as radio 상담소, 사연자, 생활법률, 상간녀/상간남 상담 stories.
@@ -169,6 +171,11 @@ Reports should include skipped candidates when there are filtered keyword candid
 ```
 
 This is not optional in normal operation. It is how the user audits borderline decisions.
+
+Court-ruling and legal-policy candidates should not be demoted merely because they are civil/business or accident-adjacent:
+
+- Supreme Court or Constitutional Court rulings with a concrete holding.
+- Sentencing-policy or Sentencing Commission items, including traffic-crime sentencing standards.
 
 ## Validation Commands
 
