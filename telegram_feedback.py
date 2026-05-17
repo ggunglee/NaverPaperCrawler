@@ -136,6 +136,25 @@ def has_feedback_today(path=FEEDBACK_DB, today=None):
     return bool(row)
 
 
+def feedback_for_today(path=FEEDBACK_DB, today=None):
+    if not path.exists():
+        return []
+    today = today or datetime.now().strftime("%Y-%m-%d")
+    with sqlite3.connect(path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT update_id, message_id, chat_id, chat_title, sender, command,
+                   text, message_date, collected_at
+            FROM feedback_messages
+            WHERE substr(COALESCE(message_date, collected_at), 1, 10) = ?
+            ORDER BY update_id ASC
+            """,
+            (today,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def parse_feedback(update, expected_chat_id=None):
     message = update.get("message") or update.get("edited_message") or {}
     text = (message.get("text") or "").strip()
@@ -259,11 +278,18 @@ def main():
     FEEDBACK_JSON_DIR.mkdir(parents=True, exist_ok=True)
     json_path = args.json_out or FEEDBACK_JSON_DIR / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_feedback.json"
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"feedback": items, "applied_keywords": applied_keywords, "reminder_sent": reminder_sent}
+    stored_feedback = feedback_for_today()
+    payload = {
+        "feedback": stored_feedback,
+        "new_feedback": items,
+        "applied_keywords": applied_keywords,
+        "reminder_sent": reminder_sent,
+    }
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(
         f"updates_seen={len(updates)} feedback_collected={len(items)} "
-        f"keyword_changes={len(applied_keywords)} reminder_sent={int(reminder_sent)} json={json_path}"
+        f"stored_feedback={len(stored_feedback)} keyword_changes={len(applied_keywords)} "
+        f"reminder_sent={int(reminder_sent)} json={json_path}"
     )
     return 0
 
