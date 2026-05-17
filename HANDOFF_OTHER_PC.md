@@ -153,6 +153,7 @@ The cache contains:
 - `report_runs`
 - `telegram_feedback.db`
 - generated reports and feedback JSONs
+- mode-specific report archives such as `YYYYMMDD_initial_morning_report.md`
 
 Cleanup:
 
@@ -270,7 +271,7 @@ py -3 -m venv venv
 Compile check:
 
 ```powershell
-.\venv\Scripts\python.exe -m py_compile morning_report_task.py report_generator.py report_qa.py telegram_feedback.py cleanup_runtime_data.py
+.\venv\Scripts\python.exe -m py_compile morning_report_task.py report_generator.py report_qa.py telegram_feedback.py feedback_review.py cleanup_runtime_data.py
 ```
 
 Generate without Telegram:

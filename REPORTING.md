@@ -18,6 +18,7 @@ Old runtime cache entries are also pruned so only the five newest `naver-news-ru
 - Online articles: previous day 18:00 through report date 06:00.
 - Online follow-up articles: report date 06:00 through 06:50, online-only.
 - Output path: `%USERPROFILE%\.naver_news_crawler\reports\YYYYMMDD_morning_report.md`.
+- Mode-specific archive path: `%USERPROFILE%\.naver_news_crawler\reports\YYYYMMDD_initial_morning_report.md` or `YYYYMMDD_update_morning_report.md`.
 - Delivery: Telegram.
 - Runtime cache path: `%USERPROFILE%\.naver_news_crawler`.
 - Retention: 30 days for articles, embeddings, exclusive claims, report runs, feedback DB rows, report files, and feedback JSON files.
@@ -217,6 +218,12 @@ Collect Telegram feedback commands:
 
 ```bat
 venv\Scripts\python.exe telegram_feedback.py
+```
+
+Review collected feedback against the archived initial draft:
+
+```bat
+venv\Scripts\python.exe feedback_review.py --feedback-json qa/telegram_feedback.json --report-date today --json-out qa/feedback_review.json
 ```
 
 At 11:00 KST the GitHub feedback workflow also runs:

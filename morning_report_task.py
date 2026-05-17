@@ -1,13 +1,14 @@
 import argparse
 import json
 import os
+import shutil
 import sys
 import urllib.parse
 import urllib.request
 from datetime import datetime, time, timedelta
 from types import SimpleNamespace
 
-from config import LOG_PATH, ensure_app_dirs, load_body_keywords, load_env_values, load_exclude_keywords, setup_logging
+from config import LOG_PATH, SAFE_DIR, ensure_app_dirs, load_body_keywords, load_env_values, load_exclude_keywords, setup_logging
 from crawler import NaverPaperCrawler
 from database import Database
 from online_crawler import crawl_online_candidates
@@ -139,6 +140,17 @@ def build_report(report_date, online_start, online_end, args):
     return generate_report(ReportDatabase(), report_args)
 
 
+def archive_mode_report(report_date, mode):
+    report_dir = SAFE_DIR / "reports"
+    source = report_dir / f"{report_date}_morning_report.md"
+    if not source.exists():
+        return None
+    target = report_dir / f"{report_date}_{mode}_morning_report.md"
+    shutil.copyfile(source, target)
+    print(f"archived: {target}")
+    return target
+
+
 def feedback_guide_message():
     return """[피드백 보내는 법]
 
@@ -261,6 +273,7 @@ def main():
         )
 
     report = build_report(report_date, online_start, online_end, args)
+    archive_mode_report(report_date, args.mode)
     if args.send_telegram:
         telegram_report = report
         if args.mode == "update" and report_has_selected_items(report):
