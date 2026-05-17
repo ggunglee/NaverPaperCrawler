@@ -71,3 +71,14 @@ def test_mandatory_institution_led_items_are_always_included():
         )
         assert rg.matches_monitor_keywords(article) is True
         assert rg.is_desk_focus_article(article) is True
+
+
+def test_schedule_items_stay_excluded_even_when_listing_mandatory_institutions():
+    article = row(
+        "[오늘의 주요일정]법조(5월18일 월요일)",
+        summary="서울중앙지법 형사22부와 서울고법 재판 일정.",
+        article_type="통신",
+    )
+
+    assert rg.matches_monitor_keywords(article) is True
+    assert rg.is_desk_focus_article(article) is False

@@ -1466,6 +1466,8 @@ def is_desk_focus_article(row):
     feedback_terms = load_feedback_rule_terms()
     if any(term in text for term in feedback_terms["exclude"]):
         return False
+    if any(term in title for term in ["[오늘의 주요일정]", "오늘의 주요일정", "주요일정"]):
+        return False
     if has_mandatory_legal_institution(row):
         return True
     if (row["article_type"] or "") == "지면" and re.match(r"^[BCD]\d+", section):
