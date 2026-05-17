@@ -6,6 +6,15 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      remind_if_empty:
+        description: "Send reminder if no feedback has been collected today"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     # 02:00 UTC is 11:00 KST. Remind if no feedback has arrived yet.
     - cron: "0 2 * * *"
@@ -74,6 +83,9 @@ jobs:
         run: |
           REMINDER_FLAG=""
           if [ "${{ github.event.schedule }}" = "0 2 * * *" ]; then
+            REMINDER_FLAG="--remind-if-empty"
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.remind_if_empty }}" = "true" ]; then
             REMINDER_FLAG="--remind-if-empty"
           fi
           python telegram_feedback.py --json-out qa/telegram_feedback.json $REMINDER_FLAG
