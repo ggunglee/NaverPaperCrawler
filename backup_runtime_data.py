@@ -96,13 +96,17 @@ def raise_for_google_status(response, action):
     if response.ok:
         return
     try:
-        error = response.json().get("error", {})
+        payload = response.json()
     except ValueError:
-        error = {"message": response.text}
+        payload = {"error": {"message": response.text}}
+    error = payload.get("error", payload)
+    if isinstance(error, str):
+        error = {"message": error, "reason": error}
     reason = ""
     errors = error.get("errors") or []
     if errors:
         reason = errors[0].get("reason", "")
+    reason = reason or error.get("reason", "")
     message = error.get("message", response.text)
     raise RuntimeError(
         f"google_drive_{action}_failed status={response.status_code} "
