@@ -14,8 +14,9 @@ from google.oauth2 import service_account
 from config import SAFE_DIR, ensure_app_dirs
 
 
-DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 BACKUP_PREFIX = "naver-runtime-backup"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 
 def parse_args():
@@ -27,15 +28,44 @@ def parse_args():
 
 
 def drive_configured():
-    return bool(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") and os.environ.get("GOOGLE_DRIVE_FOLDER_ID"))
+    return bool(os.environ.get("GOOGLE_DRIVE_FOLDER_ID") and (oauth_configured() or service_account_configured()))
 
 
-def credentials():
+def service_account_configured():
+    return bool(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"))
+
+
+def oauth_configured():
+    return bool(
+        os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
+        and os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
+        and os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN")
+    )
+
+
+def access_token():
+    if oauth_configured():
+        response = requests.post(
+            TOKEN_URL,
+            data={
+                "client_id": os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+                "client_secret": os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+                "refresh_token": os.environ["GOOGLE_OAUTH_REFRESH_TOKEN"],
+                "grant_type": "refresh_token",
+            },
+            timeout=60,
+        )
+        raise_for_google_status(response, "oauth_refresh")
+        return response.json()["access_token"]
+    return service_account_token()
+
+
+def service_account_token():
     raw = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
     info = json.loads(raw)
     creds = service_account.Credentials.from_service_account_info(info, scopes=[DRIVE_SCOPE])
     creds.refresh(Request())
-    return creds
+    return creds.token
 
 
 def create_backup_zip(runtime_dir):
@@ -58,11 +88,29 @@ def create_backup_zip(runtime_dir):
     return output
 
 
-def drive_headers(creds):
-    return {"Authorization": f"Bearer {creds.token}"}
+def drive_headers(token):
+    return {"Authorization": f"Bearer {token}"}
 
 
-def upload_file(creds, folder_id, path):
+def raise_for_google_status(response, action):
+    if response.ok:
+        return
+    try:
+        error = response.json().get("error", {})
+    except ValueError:
+        error = {"message": response.text}
+    reason = ""
+    errors = error.get("errors") or []
+    if errors:
+        reason = errors[0].get("reason", "")
+    message = error.get("message", response.text)
+    raise RuntimeError(
+        f"google_drive_{action}_failed status={response.status_code} "
+        f"reason={reason or 'unknown'} message={message}"
+    )
+
+
+def upload_file(token, folder_id, path):
     metadata = {"name": path.name, "parents": [folder_id]}
     mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     boundary = "naverpaperboundary"
@@ -79,19 +127,20 @@ def upload_file(creds, folder_id, path):
             f"--{boundary}--\r\n".encode(),
         ]
     )
-    headers = drive_headers(creds)
+    headers = drive_headers(token)
     headers["Content-Type"] = f"multipart/related; boundary={boundary}"
     response = requests.post(
         "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size",
         headers=headers,
+        params={"supportsAllDrives": "true"},
         data=body,
         timeout=120,
     )
-    response.raise_for_status()
+    raise_for_google_status(response, "upload")
     return response.json()
 
 
-def list_backups(creds, folder_id):
+def list_backups(token, folder_id):
     query = (
         f"'{folder_id}' in parents and "
         f"name contains '{BACKUP_PREFIX}-' and "
@@ -99,30 +148,33 @@ def list_backups(creds, folder_id):
     )
     response = requests.get(
         "https://www.googleapis.com/drive/v3/files",
-        headers=drive_headers(creds),
+        headers=drive_headers(token),
         params={
             "q": query,
             "fields": "files(id,name,createdTime)",
             "orderBy": "createdTime desc",
             "pageSize": 100,
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
         },
         timeout=60,
     )
-    response.raise_for_status()
+    raise_for_google_status(response, "list")
     return response.json().get("files", [])
 
 
-def prune_backups(creds, folder_id, keep):
-    backups = list_backups(creds, folder_id)
+def prune_backups(token, folder_id, keep):
+    backups = list_backups(token, folder_id)
     deleted = 0
     for item in backups[max(keep, 0) :]:
         response = requests.delete(
             f"https://www.googleapis.com/drive/v3/files/{item['id']}",
-            headers=drive_headers(creds),
+            headers=drive_headers(token),
+            params={"supportsAllDrives": "true"},
             timeout=60,
         )
         if response.status_code not in {200, 204}:
-            response.raise_for_status()
+            raise_for_google_status(response, "delete")
         deleted += 1
     return len(backups), deleted
 
@@ -136,11 +188,11 @@ def main():
             print(message)
             return 0
         raise SystemExit(message)
-    creds = credentials()
+    token = access_token()
     folder_id = os.environ["GOOGLE_DRIVE_FOLDER_ID"]
     backup = create_backup_zip(args.runtime_dir)
-    uploaded = upload_file(creds, folder_id, backup)
-    seen, deleted = prune_backups(creds, folder_id, args.keep)
+    uploaded = upload_file(token, folder_id, backup)
+    seen, deleted = prune_backups(token, folder_id, args.keep)
     print(
         f"google_drive_backup_uploaded id={uploaded.get('id')} "
         f"name={uploaded.get('name')} size={uploaded.get('size')} "

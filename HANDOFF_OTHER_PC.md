@@ -107,19 +107,26 @@ Recommended for broader online discovery:
 
 LLM secrets are not used. The reporting path is deterministic, and `--no-llm` is kept only as a compatibility flag for existing commands.
 
-## Google Drive Secrets, If Added Later
+## Google Drive Backup Secrets
 
-Runtime cache currently uses GitHub Actions cache, not Google Drive.
+Runtime cache still uses GitHub Actions cache for day-to-day continuity. Google Drive is an extra zip backup after each morning/feedback run.
 
-If GitHub should directly back up DB/feedback files to Google Drive, add:
-
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
-  - Full Google Cloud service-account key JSON.
-  - Put it in GitHub Secrets, not in a committed file.
+For a personal My Drive folder, use OAuth user credentials:
 
 - `GOOGLE_DRIVE_FOLDER_ID`
   - Folder ID from a Drive folder URL.
-  - Share that folder with the service account email.
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REFRESH_TOKEN`
+
+For a Google Workspace Shared Drive, a service account can be used instead:
+
+- `GOOGLE_DRIVE_FOLDER_ID`
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+  - Full Google Cloud service-account key JSON.
+  - Put it in GitHub Secrets, not in a committed file.
+  - Share the Shared Drive/folder with the service account email.
+  - Service accounts cannot upload into normal personal My Drive folders because they have no storage quota.
 
 Optional:
 
@@ -128,11 +135,6 @@ Optional:
 
 - `GOOGLE_DRIVE_QA_DOC_ID`
   - Use only if GitHub Actions should write directly to a Google Doc.
-
-Runtime backups can use Google Drive when these GitHub Secrets are configured:
-
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
-- `GOOGLE_DRIVE_FOLDER_ID`
 
 The backup workflow uploads `naver-runtime-backup-YYYYMMDDTHHMMSSZ.zip` and keeps the latest 14 backup zips.
 

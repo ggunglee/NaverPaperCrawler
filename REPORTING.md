@@ -11,7 +11,7 @@ venv\Scripts\python.exe morning_report_task.py --date today --send-telegram --fo
 GitHub Actions runs the initial report every day at 05:07 KST. A second online-only follow-up run checks 06:00-06:50 articles at 06:55 KST.
 Runtime SQLite data is restored and saved with GitHub Actions cache. It is pruned to the latest 30 days after each scheduled run.
 Old runtime cache entries are also pruned so only the five newest `naver-news-runtime-` caches remain.
-If Google Drive secrets are configured, each morning/feedback run also uploads a zipped runtime backup and keeps the latest 14 Drive backups.
+If Google Drive secrets are configured, each morning/feedback run also uploads a zipped runtime backup and keeps the latest 14 Drive backups. Personal My Drive folders need OAuth user secrets; service-account JSON works for Workspace Shared Drives, not normal personal folders.
 
 ## Scope
 
@@ -234,6 +234,18 @@ Back up runtime data to Google Drive:
 ```bat
 venv\Scripts\python.exe backup_runtime_data.py --skip-if-unconfigured --keep 14
 ```
+
+GitHub Secrets for a personal My Drive folder:
+
+- `GOOGLE_DRIVE_FOLDER_ID`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REFRESH_TOKEN`
+
+GitHub Secrets for a Google Workspace Shared Drive:
+
+- `GOOGLE_DRIVE_FOLDER_ID`
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
 
 At 11:00 KST the GitHub feedback workflow also runs:
 
