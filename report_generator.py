@@ -156,6 +156,20 @@ MONITOR_KEYWORDS = sorted(
         "검찰",
         "법원",
         "특검",
+        "종합특검",
+        "특검팀",
+        "계엄",
+        "비상계엄",
+        "관저",
+        "관저 이전",
+        "헌법불합치",
+        "헌법",
+        "개헌",
+        "위헌",
+        "양형",
+        "양형위원회",
+        "검찰개혁",
+        "검찰 개혁",
         "행정법원",
         "회생법원",
         "가정법원",
@@ -990,6 +1004,13 @@ def generate_report(db, args):
     rows = non_police_rows
     domestic_rows = [row for row in rows if not is_foreign_incidental_article(row)]
     rows = domestic_rows
+    national_rows = [row for row in rows if not is_local_non_seoul_article(row)]
+    candidate_exclusions.extend(
+        (row, "local_non_seoul_excluded", None, None)
+        for row in rows
+        if row not in national_rows and matches_monitor_keywords(row)
+    )
+    rows = national_rows
     report_rows = [row for row in rows if not is_lifestyle_legal_advice(row)]
     candidate_exclusions.extend(
         (row, "lifestyle_legal_advice", None, None)
@@ -1171,10 +1192,17 @@ def most_similar_candidate(db, embedder, row, candidates):
 
 def same_day_priority_key(row):
     title = row["title"] or ""
-    is_exclusive = "단독" in title
-    is_yonhap = (row["newspaper"] or "") == "연합뉴스"
+    source = row["newspaper"] or ""
+    article_type = row["article_type"] or ""
     time_key = row["published_at"] or row["created_at"] or ""
-    return (0 if is_exclusive else 1, 0 if is_yonhap else 1, time_key, row["id"])
+    return (
+        0 if "단독" in title else 1,
+        0 if source == "연합뉴스" else 1,
+        0 if article_type == "지면" else 1,
+        source_priority(source),
+        time_key,
+        row["id"],
+    )
 
 
 def title_token_similarity(left, right):
@@ -1212,13 +1240,36 @@ def dedupe_event_rows(rows):
 
 def report_article_priority(row):
     title = row["title"] or ""
-    is_yonhap = (row["newspaper"] or "") == "연합뉴스"
+    source = row["newspaper"] or ""
+    article_type = row["article_type"] or ""
     return (
         0 if "단독" in title else 1,
-        0 if is_yonhap else 1,
+        0 if source == "연합뉴스" else 1,
+        0 if article_type == "지면" else 1,
+        source_priority(source),
         row["published_at"] or row["created_at"] or "",
         row["id"],
     )
+
+
+def source_priority(source):
+    priorities = {
+        "연합뉴스": 0,
+        "경향신문": 1,
+        "한겨레": 1,
+        "동아일보": 1,
+        "한국일보": 1,
+        "조선일보": 1,
+        "중앙일보": 1,
+        "국민일보": 1,
+        "문화일보": 1,
+        "서울신문": 1,
+        "세계일보": 1,
+        "노컷뉴스": 2,
+        "뉴스1": 3,
+        "뉴시스": 4,
+    }
+    return priorities.get(source or "", 5)
 
 
 def article_event_key(row):
@@ -1407,6 +1458,143 @@ def is_lifestyle_legal_advice(row):
     return "라디오" in text and any(term in text for term in ["상담", "사연", "생활법률"])
 
 
+def is_local_non_seoul_article(row):
+    title = row["title"] or ""
+    section = row["paper_section"] or ""
+    source = row["newspaper"] or ""
+    lead_text = f"{title}\n{row['summary'] or ''}"
+    text = f"{lead_text}\n{row['body'] or ''}"
+    if source in {"강원CBS", "경남CBS", "광주CBS", "대구CBS", "대전CBS", "부산CBS", "전북CBS", "제주CBS"}:
+        return True
+    local_court_subjects = [
+        "춘천지법",
+        "춘천지방법원",
+        "춘천지검",
+        "춘천지방검찰청",
+        "전주지법",
+        "전주지방법원",
+        "전주지검",
+        "전주지방검찰청",
+        "대전지법",
+        "대전지방법원",
+        "대전지검",
+        "대전지방검찰청",
+        "대구지법",
+        "대구지방법원",
+        "대구지검",
+        "대구지방검찰청",
+        "부산지법",
+        "부산지방법원",
+        "부산지검",
+        "부산지방검찰청",
+        "울산지법",
+        "울산지방법원",
+        "울산지검",
+        "울산지방검찰청",
+        "광주지법",
+        "광주지방법원",
+        "광주지검",
+        "광주지방검찰청",
+        "청주지법",
+        "청주지방법원",
+        "청주지검",
+        "청주지방검찰청",
+        "제주지법",
+        "제주지방법원",
+        "제주지검",
+        "제주지방검찰청",
+        "창원지법",
+        "창원지방법원",
+        "창원지검",
+        "창원지방검찰청",
+        "수원지법",
+        "수원지방법원",
+        "수원지검",
+        "수원지방검찰청",
+        "의정부지법",
+        "의정부지방법원",
+        "의정부지검",
+        "의정부지방검찰청",
+        "인천지법",
+        "인천지방법원",
+        "인천지검",
+        "인천지방검찰청",
+    ]
+    national_subject_terms = [
+        "대법",
+        "대법원",
+        "헌재",
+        "헌법재판소",
+        "법무부",
+        "대검",
+        "특검",
+        "종합특검",
+        "특검팀",
+        "공수처",
+    ]
+    if any(term in lead_text for term in local_court_subjects) and not any(
+        term in lead_text for term in national_subject_terms
+    ):
+        return True
+    national_override_terms = [
+        "대법",
+        "대법원",
+        "헌재",
+        "헌법재판소",
+        "헌법불합치",
+        "헌법",
+        "개헌",
+        "위헌",
+        "특검",
+        "종합특검",
+        "특검팀",
+        "계엄",
+        "비상계엄",
+        "김건희",
+        "윤석열",
+        "법무부",
+        "대검",
+        "중수청",
+        "공소청",
+    ]
+    if any(term in text for term in national_override_terms):
+        return False
+    if section == "전국":
+        return True
+    local_terms = [
+        "춘천",
+        "강원",
+        "원주",
+        "강릉",
+        "속초",
+        "대전",
+        "대구",
+        "부산",
+        "울산",
+        "광주",
+        "전주",
+        "청주",
+        "제주",
+        "창원",
+        "수원",
+        "의정부",
+        "인천",
+        "양산",
+        "부울경",
+        "지역",
+        "지자체",
+    ]
+    local_legal_terms = [
+        "지법",
+        "지검",
+        "지방검찰청",
+        "지방법원",
+        "고법",
+        "고검",
+    ]
+    return any(term in text for term in local_terms) and any(term in text for term in local_legal_terms)
+
+
 def is_routine_election_politics(row):
     title = row["title"] or ""
     section = row["paper_section"] or ""
@@ -1577,6 +1765,11 @@ def is_desk_focus_article(row):
         "처벌 기준",
         "파기환송",
         "국가 배상",
+        "헌법불합치",
+        "위헌",
+        "개헌",
+        "검찰개혁",
+        "검찰 개혁",
     ]
     if any(term in text for term in strong_terms) or any(term in text for term in feedback_terms["include"]):
         return True
@@ -1705,6 +1898,17 @@ def sentence_score_for_report(sentence, title=""):
         "기소",
         "수사",
         "특검",
+        "종합특검",
+        "특검팀",
+        "계엄",
+        "비상계엄",
+        "관저",
+        "헌법불합치",
+        "헌법",
+        "개헌",
+        "위헌",
+        "검찰개혁",
+        "검찰 개혁",
         "법무부",
         "검찰",
         "중수청",
@@ -1844,6 +2048,7 @@ def render_report(report_date, items, skipped):
                     "police_led_candidate": "경찰 주체 제외",
                     "lifestyle_legal_advice": "생활법률/상담성 기사 제외",
                     "desk_focus_excluded": "법조 초점 낮음",
+                    "local_non_seoul_excluded": "서울 외 지역 기사 제외",
                 }
                 suffix = f"유사도 {score:.2f}" if score is not None else reason_labels.get(reason, reason)
                 lines.append(f"- {row['title']} / {row['newspaper']} ({suffix})")

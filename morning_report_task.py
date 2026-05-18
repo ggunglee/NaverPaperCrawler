@@ -187,7 +187,10 @@ def feedback_guide_message():
 삭제할 포함 키워드.
 
 /remove_exclude_keyword
-삭제할 배제 키워드."""
+삭제할 배제 키워드.
+
+/keywords
+현재 포함/배제 키워드 확인. /show_keywords도 가능."""
 
 
 def report_has_selected_items(report):

@@ -33,6 +33,8 @@ FEEDBACK_COMMANDS = (
     "/exclude_keywords",
     "/remove_include_keyword",
     "/remove_exclude_keyword",
+    "/keywords",
+    "/show_keywords",
 )
 KEYWORD_COMMANDS = {
     "/include_keyword": ("include", "add"),
@@ -42,6 +44,7 @@ KEYWORD_COMMANDS = {
     "/remove_include_keyword": ("include", "remove"),
     "/remove_exclude_keyword": ("exclude", "remove"),
 }
+KEYWORD_STATUS_COMMANDS = {"/keywords", "/show_keywords"}
 FEEDBACK_DB = DATA_DIR / "telegram_feedback.db"
 FEEDBACK_JSON_DIR = SAFE_DIR / "feedback"
 
@@ -248,6 +251,26 @@ def apply_keyword_commands(items):
     return applied
 
 
+def keyword_status_commands(items):
+    return [item for item in items if item["command"] in KEYWORD_STATUS_COMMANDS]
+
+
+def keyword_status_message():
+    include_keywords = load_body_keywords()
+    exclude_keywords = load_exclude_keywords()
+    lines = ["[아침보고 현재 키워드]"]
+    lines.append("")
+    lines.append("포함 키워드")
+    lines.extend(f"- {keyword}" for keyword in include_keywords)
+    lines.append("")
+    lines.append("배제 키워드")
+    if exclude_keywords:
+        lines.extend(f"- {keyword}" for keyword in exclude_keywords)
+    else:
+        lines.append("- (없음)")
+    return "\n".join(lines)
+
+
 def main():
     ensure_app_dirs()
     args = parse_args()
@@ -272,6 +295,9 @@ def main():
             target = "포함" if item["target"] == "include" else "배제"
             lines.append(f"- {target} 키워드 {verb}: {', '.join(item['keywords'])}")
         send_message(token, chat_id, "\n".join(lines))
+    keyword_status_requested = bool(keyword_status_commands(items))
+    if keyword_status_requested:
+        send_message(token, chat_id, keyword_status_message())
     reminder_sent = False
     if args.remind_if_empty and not items and not has_feedback_today():
         send_message(token, chat_id, args.reminder_text)
@@ -284,12 +310,14 @@ def main():
         "feedback": stored_feedback,
         "new_feedback": items,
         "applied_keywords": applied_keywords,
+        "keyword_status_requested": keyword_status_requested,
         "reminder_sent": reminder_sent,
     }
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(
         f"updates_seen={len(updates)} feedback_collected={len(items)} "
         f"stored_feedback={len(stored_feedback)} keyword_changes={len(applied_keywords)} "
+        f"keyword_status_requested={int(keyword_status_requested)} "
         f"reminder_sent={int(reminder_sent)} json={json_path}"
     )
     return 0

@@ -82,7 +82,7 @@ class NaverNewsApiClient:
         total = 0
         inserted = 0
         failures = []
-        monitor_keywords = NAVER_API_MONITOR_KEYWORDS
+        monitor_keywords = normalize_keywords(keywords or NAVER_API_MONITOR_KEYWORDS)
         for keyword in monitor_keywords:
             try:
                 for item in self.search(keyword):
@@ -195,6 +195,18 @@ def contains_any_monitor_keyword(text: str, keywords: list[str]) -> bool:
         if compact_keyword and compact_keyword in compact_text:
             return True
     return False
+
+
+def normalize_keywords(keywords: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for keyword in keywords or []:
+        text = str(keyword).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 def normalize_match_text(text: str) -> str:

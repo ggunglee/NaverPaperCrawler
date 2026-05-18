@@ -34,6 +34,8 @@ POLITE_ENDINGS = [
     "였습니다",
 ]
 
+PLAIN_FORMAL_ENDING_RE = re.compile(r"(했다|하였다|한다|된다|됐다|이다|있다|였다|이었다)[.!?。]")
+
 AWKWARD_FRAGMENTS = [
     "지만.",
 ]
@@ -96,6 +98,8 @@ def qa_report(path, min_selected=1, max_selected=30):
         for term in POLITE_ENDINGS:
             if term in body:
                 warnings.append(f"polite ending '{term}' in block {index}: {headline}")
+        if PLAIN_FORMAL_ENDING_RE.search(body):
+            warnings.append(f"plain formal ending in block {index}: {headline}")
         for term in AWKWARD_FRAGMENTS:
             if term in body:
                 warnings.append(f"awkward fragment '{term}' in block {index}: {headline}")

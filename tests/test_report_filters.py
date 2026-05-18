@@ -8,6 +8,7 @@ def row(title, summary="", body="", section="사회", article_type="지면", pap
         "body": body,
         "paper_section": section if paper_section is None else paper_section,
         "article_type": article_type,
+        "newspaper": "테스트신문",
     }
 
 
@@ -82,3 +83,80 @@ def test_schedule_items_stay_excluded_even_when_listing_mandatory_institutions()
 
     assert rg.matches_monitor_keywords(article) is True
     assert rg.is_desk_focus_article(article) is False
+
+
+def test_special_counsel_martial_law_and_residence_items_are_monitored():
+    residence = row(
+        '윤석열 대통령실 "관저 이전비, 행안부가 다 내라" 압박 정황',
+        summary="2차 종합특검팀이 대통령실의 관저 이전 추가비용 압박 정황을 파악했다.",
+        section="10면",
+    )
+    martial_law = row(
+        '특검, 김흥준 전 육본 정책실장 입건...계엄 가담 의혹',
+        summary="종합특검팀이 비상계엄 해제 요구결의안 가결 이후 대책 논의 의혹을 수사한다.",
+        article_type="통신",
+    )
+    constitutional = row(
+        "'위헌-헌법불합치' 결정에도 개정 안된 법률 27건",
+        summary="헌법재판소 결정 이후 후속 법률안이 발의되지 않은 법률도 있다.",
+        section="10면",
+    )
+
+    for article in [residence, martial_law, constitutional]:
+        assert rg.matches_monitor_keywords(article) is True
+        assert rg.is_desk_focus_article(article) is True
+
+
+def test_local_non_seoul_legal_items_are_excluded_without_national_anchor():
+    local = row(
+        "춘천지법, 지역 조합장 선거법 위반 벌금형",
+        summary="강원 지역 사건의 1심 선고 내용.",
+        section="전국",
+    )
+    national = row(
+        "대법, 춘천지법 선고 뒤집고 파기환송",
+        summary="대법원이 법리 오해를 이유로 사건을 돌려보냈다.",
+        section="전국",
+    )
+
+    assert rg.is_local_non_seoul_article(local) is True
+    assert rg.is_local_non_seoul_article(national) is False
+
+
+def test_regional_court_subjects_are_excluded_even_outside_national_section():
+    chuncheon = row(
+        "춘천지방법원, 음주운전 사고 운전자 징역형 선고",
+        summary="춘천지법이 지역 사건 1심 판결을 내렸다.",
+        section="사회",
+    )
+    jeonju = row(
+        "전주지법, 보이스피싱 조직원 실형",
+        summary="전주지방법원이 피고인에게 실형을 선고했다.",
+        section="사회",
+    )
+    supreme = row(
+        "대법, 전주지법 판결 파기환송",
+        summary="대법원이 원심 판단을 뒤집었다.",
+        section="사회",
+    )
+
+    assert rg.is_local_non_seoul_article(chuncheon) is True
+    assert rg.is_local_non_seoul_article(jeonju) is True
+    assert rg.is_local_non_seoul_article(supreme) is False
+
+
+def test_same_event_prefers_paper_over_newsis_when_not_exclusive_or_yonhap():
+    paper = row(
+        "특검, 김흥준 전 육본 정책실장 입건...계엄 가담 의혹",
+        summary="종합특검팀이 같은 사안을 수사한다.",
+        article_type="지면",
+    )
+    newsis = row(
+        "특검, 김흥준 전 육본 정책실장 입건...계엄 가담 의혹",
+        summary="종합특검팀이 같은 사안을 수사한다.",
+        article_type="통신",
+    )
+    paper.update({"id": 1, "newspaper": "동아일보", "published_at": None, "created_at": "2026-05-18T01:00:00"})
+    newsis.update({"id": 2, "newspaper": "뉴시스", "published_at": "2026-05-18 05:00:00", "created_at": "2026-05-18T05:00:00"})
+
+    assert rg.report_article_priority(paper) < rg.report_article_priority(newsis)
