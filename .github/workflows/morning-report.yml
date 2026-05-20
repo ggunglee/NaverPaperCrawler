@@ -135,6 +135,7 @@ jobs:
             FEEDBACK_FLAG="--send-feedback-guide"
           fi
           python morning_report_task.py --date today --mode "$MODE" $SEND_FLAG $FEEDBACK_FLAG $EXTRA_FLAGS --no-llm
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
 
       - name: Summarize generated report
         id: summarize
@@ -144,7 +145,9 @@ jobs:
           from pathlib import Path
           import os
           report_dir = Path.home() / ".naver_news_crawler" / "reports"
-          reports = sorted(report_dir.glob("*_morning_report.md"))
+          report_mode = os.environ.get("REPORT_MODE") or ""
+          preferred = sorted(report_dir.glob(f"*_{report_mode}_morning_report.md")) if report_mode else []
+          reports = preferred or sorted(report_dir.glob("*_morning_report.md"))
           if not reports:
               print("No report file found.")
               raise SystemExit(0)
@@ -178,6 +181,8 @@ jobs:
               Path(summary_path).write_text("\n".join(summary) + "\n", encoding="utf-8")
           print("\n".join(summary))
           PY
+        env:
+          REPORT_MODE: ${{ steps.generate.outputs.mode }}
 
       - name: Prune runtime data
         if: always()
