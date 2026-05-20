@@ -1,6 +1,6 @@
 # NaverPaperCrawler Handoff
 
-Last updated: 2026-05-17 KST
+Last updated: 2026-05-20 KST
 
 This repo now runs the legal morning report primarily through GitHub Actions, not a local Windows scheduler.
 
@@ -218,6 +218,10 @@ One failed run was intentionally diagnosed and fixed:
 
 Current important editorial rules:
 
+- Lawtimes/법률신문 is now crawled directly from its latest/news pages because it is not covered by the existing RSS set and today's `/final` feedback included Lawtimes articles.
+- Feedback from `/final` is confirmed to reach GitHub: the Telegram Feedback workflow opens `feedback-review` issues when the final report differs from the draft. On 2026-05-20 it opened issue #7 with 6 user-added and 23 user-removed items.
+- The recurring 2026-05-20 misses were caused by weak recall terms (`배임죄`, `특례법`, `대법관`, `고법판사`, `국적판정불가`, `사증 발급`) and by Lawtimes not being collected. Those terms were added as monitor/desk-focus signals.
+- Repeated unwanted items came from narrow same-event duplicate keys. The report now groups common update rewrites for `관저 이전 구속영장`, `김용현 비화폰 1심`, `타이어뱅크 탈세 구형`, and `윤석열 특검 소환/강제구인`.
 - Foreign/overseas incident stories sourced from overseas media are silently excluded.
 - 생활법률, 상담소, 사연자, radio advice style items are silently excluded.
 - Exact same-event duplicates are silently excluded from Telegram.
@@ -248,6 +252,11 @@ Telegram splitting:
 - Report and hold/exclusion sections are separate Telegram messages.
 - Follow-up report is prefixed with `[추가 보고]` if it has items.
 - Feedback guide is a separate Telegram message after the follow-up run.
+- Multiple Telegram recipients are supported with `TELEGRAM_CHAT_IDS`; `TELEGRAM_GROUP_CHAT_ID` is sent first. Set repository variable `TELEGRAM_GROUP_ONLY=true` to send only to the group chat.
+
+## Storage Note
+
+Google Drive zip backup is still the best current persistence option for this repo because it preserves SQLite DBs, generated reports, feedback JSON, and rule state as one runtime snapshot. Google Docs or Sheets would be better for human review logs and editable rule tables, but not as the primary DB backup unless the app is redesigned to write structured rows instead of SQLite files.
 
 ## Feedback Commands
 

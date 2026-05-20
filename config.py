@@ -105,6 +105,22 @@ DEFAULT_BODY_KEYWORDS = [
     "변협",
     "대한변호사협회",
     "서울지방변호사회",
+    "대법관",
+    "고법판사",
+    "고법 판사",
+    "법관 인사",
+    "배임죄",
+    "특례법",
+    "재산관리범죄",
+    "무국적자",
+    "국적판정불가",
+    "탈북",
+    "탈북인",
+    "사증 발급",
+    "비자 발급",
+    "법률신문",
+    "벌금형",
+    "공동상해",
 ]
 DEFAULT_EXCLUDE_KEYWORDS = []
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -133,6 +149,7 @@ ONLINE_NEWS_SOURCES = {
     "채널A": ["ichannela.com", "channel-a.co.kr"],
     "TV조선": ["chosun.com", "tvchosun.com"],
     "노컷뉴스": ["nocutnews.co.kr"],
+    "법률신문": ["lawtimes.co.kr"],
     "온라인": [],
 }
 
@@ -161,6 +178,7 @@ ARTICLE_TYPE_BY_SOURCE = {
     "채널A": "방송",
     "TV조선": "방송",
     "노컷뉴스": "온라인",
+    "법률신문": "온라인",
     "온라인": "온라인",
 }
 
@@ -281,6 +299,30 @@ def load_env_values() -> dict:
         key = re.sub(r"[^A-Z0-9_]+", "_", key.strip().upper()).strip("_")
         values[key] = value.strip().strip('"').strip("'")
     return values
+
+
+def split_env_list(value):
+    if not value:
+        return []
+    return [item.strip() for item in re.split(r"[,;\n]+", str(value)) if item.strip()]
+
+
+def telegram_recipient_ids(env=None):
+    env = env or load_env_values()
+
+    def read(key):
+        return env.get(key) or os.environ.get(key)
+
+    group_id = read("TELEGRAM_GROUP_CHAT_ID")
+    group_only = str(read("TELEGRAM_GROUP_ONLY") or "").strip().lower() in {"1", "true", "yes", "on"}
+    if group_only and group_id:
+        return [group_id]
+
+    recipients = []
+    for chat_id in [group_id, *split_env_list(read("TELEGRAM_CHAT_IDS")), read("TELEGRAM_CHAT_ID")]:
+        if chat_id and chat_id not in recipients:
+            recipients.append(chat_id)
+    return recipients
 
 
 def get_naver_api_credentials() -> tuple[str | None, str | None]:

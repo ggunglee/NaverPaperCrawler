@@ -18,6 +18,7 @@ from config import (
     normalize_keywords,
     save_body_keywords,
     save_exclude_keywords,
+    telegram_recipient_ids,
 )
 
 
@@ -65,8 +66,7 @@ def parse_args():
 def telegram_credentials():
     env = load_env_values()
     token = env.get("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = env.get("TELEGRAM_CHAT_ID") or os.environ.get("TELEGRAM_CHAT_ID")
-    return token, chat_id
+    return token, telegram_recipient_ids(env)
 
 
 def api_get(token, method, params=None):
@@ -84,15 +84,17 @@ def api_get(token, method, params=None):
 def send_message(token, chat_id, text):
     if not chat_id or not text:
         return
-    api_get(
-        token,
-        "sendMessage",
-        {
-            "chat_id": chat_id,
-            "text": text,
-            "disable_web_page_preview": "true",
-        },
-    )
+    chat_ids = chat_id if isinstance(chat_id, (list, tuple, set)) else [chat_id]
+    for recipient in chat_ids:
+        api_get(
+            token,
+            "sendMessage",
+            {
+                "chat_id": recipient,
+                "text": text,
+                "disable_web_page_preview": "true",
+            },
+        )
 
 
 def init_db(path=FEEDBACK_DB):
@@ -166,8 +168,10 @@ def parse_feedback(update, expected_chat_id=None):
         return None
     chat = message.get("chat") or {}
     chat_id = str(chat.get("id") or "")
-    if expected_chat_id and chat_id != str(expected_chat_id):
-        return None
+    if expected_chat_id:
+        expected = {str(item) for item in expected_chat_id} if isinstance(expected_chat_id, (list, tuple, set)) else {str(expected_chat_id)}
+        if chat_id not in expected:
+            return None
     command = text.split(maxsplit=1)[0].split("@", 1)[0]
     sender_info = message.get("from") or {}
     sender = sender_info.get("username") or " ".join(
@@ -275,7 +279,7 @@ def main():
     ensure_app_dirs()
     args = parse_args()
     token, configured_chat_id = telegram_credentials()
-    chat_id = args.chat_id or configured_chat_id
+    chat_id = [args.chat_id] if args.chat_id else configured_chat_id
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is not configured.")
     offset = latest_update_id()

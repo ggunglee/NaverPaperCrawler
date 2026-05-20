@@ -197,10 +197,10 @@ KNOWN_CATEGORIES = {
     "검찰 수사개혁": ["검찰개혁", "수사권", "보완수사", "중수청", "중대범죄수사청", "공소청"],
     "검찰 처분": ["불기소", "약식기소", "기소", "고소", "각하", "서울중앙지검", "서울고검"],
     "검찰 감찰": ["감찰", "감찰위", "대검", "박상용", "연어", "술 파티"],
-    "법무부": ["법무부", "비자", "출입국", "체류", "귀화"],
-    "법원": ["법원", "대법원", "대법", "서울중앙지법", "서울고법", "서울고등법원", "행정법원", "회생법원", "가정법원"],
+    "법무부": ["법무부", "비자", "비자 발급", "사증 발급", "출입국", "체류", "귀화", "무국적자", "국적판정불가", "탈북"],
+    "법원": ["법원", "대법원", "대법", "대법관", "고법판사", "고법 판사", "서울중앙지법", "서울고법", "서울고등법원", "행정법원", "회생법원", "가정법원", "벌금형", "공동상해"],
     "헌법재판": ["헌법재판소", "헌재"],
-    "법조 제도": ["변협", "대한변호사협회", "서울지방변호사회", "회생", "파산", "변호사"],
+    "법조 제도": ["변협", "대한변호사협회", "서울지방변호사회", "회생", "파산", "변호사", "배임죄", "특례법", "재산관리범죄", "법관 인사"],
     "공수처": ["공수처", "고위공직자범죄수사처"],
 }
 
@@ -250,6 +250,21 @@ MONITOR_KEYWORDS = sorted(
         "회생",
         "비자",
         "출입국",
+        "대법관",
+        "고법판사",
+        "고법 판사",
+        "법관 인사",
+        "배임죄",
+        "특례법",
+        "재산관리범죄",
+        "무국적자",
+        "국적판정불가",
+        "탈북",
+        "탈북인",
+        "사증 발급",
+        "비자 발급",
+        "벌금형",
+        "공동상해",
     },
     key=len,
     reverse=True,
@@ -266,6 +281,9 @@ MANDATORY_LEGAL_INSTITUTIONS = [
     "법무부",
     "서울고등법원",
     "서울고법",
+    "대법관",
+    "고법판사",
+    "고법 판사",
 ]
 
 
@@ -1018,6 +1036,13 @@ def generate_report(db, args):
         if row not in report_rows and matches_monitor_keywords(row)
     )
     rows = report_rows
+    value_rows = [row for row in rows if not is_low_value_legal_mention(row)]
+    candidate_exclusions.extend(
+        (row, "low_value_legal_mention", None, None)
+        for row in rows
+        if row not in value_rows and matches_monitor_keywords(row)
+    )
+    rows = value_rows
     if args.desk_focus:
         desk_rows = [row for row in rows if is_desk_focus_article(row)]
         candidate_exclusions.extend(
@@ -1265,6 +1290,7 @@ def source_priority(source):
         "문화일보": 1,
         "서울신문": 1,
         "세계일보": 1,
+        "법률신문": 1,
         "노컷뉴스": 2,
         "뉴스1": 3,
         "뉴시스": 4,
@@ -1274,6 +1300,15 @@ def source_priority(source):
 
 def article_event_key(row):
     text = normalize_match_text(" ".join([row["title"] or "", row["summary"] or "", focused_article_text(row, 700)]))
+    if "관저" in text and ("구속영장" in text or "구속심사" in text or "영장실질심사" in text):
+        return "관저이전:구속영장"
+    if "김용현" in text and "비화폰" in text and ("징역3년" in text or "1심" in text):
+        return "김용현:비화폰:1심"
+    if ("타이어뱅크" in text or "타뱅" in text) and "탈세" in text and "구형" in text:
+        return "타이어뱅크:탈세:파기환송심구형"
+    if "윤석열" in text and "특검" in text and ("강제구인" in text or "불응" in text):
+        date_match = re.search(r"(\d{1,2})일", text)
+        return f"윤석열:특검소환:{date_match.group(1) if date_match else ''}"
     if "윤석열" in text and "특검" in text and ("소환" in text or "출석" in text):
         date_match = re.search(r"(\d{1,2})일", text)
         return f"윤석열:특검소환:{date_match.group(1) if date_match else ''}"
@@ -1458,6 +1493,39 @@ def is_lifestyle_legal_advice(row):
     return "라디오" in text and any(term in text for term in ["상담", "사연", "생활법률"])
 
 
+def is_low_value_legal_mention(row):
+    title = row["title"] or ""
+    summary = row["summary"] or ""
+    text = f"{title}\n{summary}\n{row['body'] or ''}"
+    if any(term in title for term in ["[게시판]", "[기억할 오늘]", "교수 임용", "기념행사 개최", "세계인의 날"]):
+        return True
+    if any(term in title for term in ["부친상", "모친상", "배우자상", "장인상", "결혼", "개업", "인사이동"]):
+        return True
+    if any(term in title for term in ["그들이 사는 방식", "판례평석", "연구논단", "군인의 유족", "구법(舊法)"]):
+        return True
+    if any(term in title for term in ["오늘 대법원 선고", "대법, 오늘 판단", "오늘 첫 재판"]):
+        return True
+    political_case_churn = [
+        "관저 이전",
+        "계엄 정당화",
+        "김용현",
+        "순직해병",
+        "내란선전",
+        "내란전담재판부",
+        "공소취소특검법",
+    ]
+    procedural_exception = ["임의제출", "압수수색 영장", "영장 조건", "절차 위반"]
+    if any(term in title for term in political_case_churn) and not any(term in text for term in procedural_exception):
+        return True
+    if any(term in title for term in ["옵티머스", "보험사가 지급", "넷플릭스", "타이어뱅크", "SG발", "지하철역 시위", "성과급 요구"]):
+        return True
+    if "파기환송심" in title and "구형" in title and not any(term in text for term in ["법무부", "검찰", "특검"]):
+        return True
+    if "법인세" in title and "항소" in title and "서울행정법원" not in text:
+        return True
+    return False
+
+
 def is_local_non_seoul_article(row):
     title = row["title"] or ""
     section = row["paper_section"] or ""
@@ -1636,6 +1704,9 @@ def is_routine_election_politics(row):
         "대법 판결",
         "헌재 결정",
         "법원 판결",
+        "배임죄",
+        "특례법",
+        "재산관리범죄",
     ]
     if any(term in title for term in substantive_legal_terms):
         return False
@@ -1678,6 +1749,8 @@ def is_desk_focus_article(row):
         "구형",
         "기소",
         "불기소",
+        "벌금형",
+        "공동상해",
     ]
     if any(term in title for term in ["살해", "살인", "폭행", "음주운전"]) and not any(
         term in text for term in legal_process_terms
@@ -1739,7 +1812,22 @@ def is_desk_focus_article(row):
         "불기소",
         "약식기소",
         "법무부",
+        "배임죄",
+        "특례법",
+        "재산관리범죄",
+        "대법관",
+        "고법판사",
+        "고법 판사",
+        "법관 인사",
+        "벌금형",
+        "공동상해",
         "비자",
+        "비자 발급",
+        "사증 발급",
+        "무국적자",
+        "국적판정불가",
+        "탈북",
+        "탈북인",
         "체류변경",
         "출입국",
         "외국인 환자",
@@ -1914,9 +2002,22 @@ def sentence_score_for_report(sentence, title=""):
         "중수청",
         "보완수사권",
         "감찰",
+        "배임죄",
+        "특례법",
+        "재산관리범죄",
+        "대법관",
+        "고법판사",
+        "고법 판사",
+        "벌금형",
+        "공동상해",
         "비자",
+        "비자 발급",
+        "사증 발급",
         "체류변경",
         "출입국",
+        "무국적자",
+        "국적판정불가",
+        "탈북",
         "외국인 환자",
         "재정 능력",
         "불허",
@@ -1974,7 +2075,7 @@ def lexical_vector(text, dimensions=1024):
 
 
 def render_report(report_date, items, skipped):
-    hidden_reasons = {"same_event_duplicate", "lifestyle_legal_advice"}
+    hidden_reasons = {"same_event_duplicate", "lifestyle_legal_advice", "low_value_legal_mention"}
     skipped = [item for item in skipped if item[1] not in hidden_reasons]
     lines = []
     if not items:
@@ -2047,6 +2148,7 @@ def render_report(report_date, items, skipped):
                     "non_exclusive_candidate": "단독 아님",
                     "police_led_candidate": "경찰 주체 제외",
                     "lifestyle_legal_advice": "생활법률/상담성 기사 제외",
+                    "low_value_legal_mention": "법조 단순 언급 기사 제외",
                     "desk_focus_excluded": "법조 초점 낮음",
                     "local_non_seoul_excluded": "서울 외 지역 기사 제외",
                 }
