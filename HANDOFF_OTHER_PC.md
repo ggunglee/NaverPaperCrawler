@@ -308,7 +308,8 @@ Google Sheets assessment:
 
 - Google Sheets is likely more stable than Drive ZIP for human inspection, manual correction, and debugging because every article row can be seen without downloading a runtime archive.
 - Google Sheets is not automatically more stable as a full DB replacement: Sheets has API quotas, slower row updates, weaker transactional behavior, and harder concurrent writes than SQLite.
-- Recommended next implementation is Sheets mirror/export first, then promote Sheets to canonical only if Actions cache plus Drive ZIP continues to lose or corrupt runtime state.
+- Implemented next step: `google_sheets_mirror.py` mirrors each run to `Raw_Articles` and `Morning_Report` when `GOOGLE_SERVICE_ACCOUNT_JSON` and `GOOGLE_SHEETS_SPREADSHEET_ID` are configured.
+- Recommended migration path remains mirror/export first, then promote Sheets to canonical only if Actions cache plus Drive ZIP continues to lose or corrupt runtime state.
 - If promoted later, use two tabs first: `Raw_Articles` for collected rows and `Morning_Report` for selected/excluded decisions. Keep immutable URL/date/source keys so reruns update rows idempotently.
 
 ## Feedback Commands
