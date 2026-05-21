@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from config import DB_PATH, SAFE_DIR
@@ -56,6 +57,7 @@ def configured(spreadsheet_id):
 
 def main():
     args = parse_args()
+    args.date = resolve_date(args.date)
     if not configured(args.spreadsheet_id):
         message = "google_sheets_mirror_skipped=unconfigured"
         if args.skip_if_unconfigured:
@@ -84,6 +86,12 @@ def main():
     replace_worksheet(sheet, "Morning_Report", REPORT_HEADERS, report_rows)
     print(f"google_sheets_mirror_completed raw_rows={len(rows)} report_rows={len(report_rows)}")
     return 0
+
+
+def resolve_date(value):
+    if value == "today":
+        return datetime.now().strftime("%Y%m%d")
+    return value
 
 
 def open_sheet(spreadsheet_id):
