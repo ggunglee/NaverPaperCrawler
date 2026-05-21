@@ -258,6 +258,41 @@ Telegram splitting:
 
 Google Drive zip backup is still the best current persistence option for this repo because it preserves SQLite DBs, generated reports, feedback JSON, and rule state as one runtime snapshot. Google Docs or Sheets would be better for human review logs and editable rule tables, but not as the primary DB backup unless the app is redesigned to write structured rows instead of SQLite files.
 
+## 2026-05-21 Selection Quality Branch
+
+Branch: `codex/fix-morning-report-feedback-recall`
+
+This branch changes morning report selection quality, not just keyword recall.
+
+Implemented:
+
+- Hard silent drops now run before desk-focus selection: obvious photo/video/board items, opinion columns, foreign DOJ/Trump/IRS stories, promo/education stories, and obvious local election snippets.
+- Police-led filtering no longer drops prosecution-policy articles just because the title also contains police. Terms such as prosecution, supplementary investigation authority, investigation authority, prosecution reform, central investigation office, public prosecution office, and all-case transfer keep the article in the candidate pool.
+- Special-counsel investigation stories are treated as high-confidence legal stories when the article has a real actor/action pair such as special counsel plus summons, search, indictment, arrest warrant, trial, rebellion charge, or Yoon Suk Yeol summons.
+- Local filtering was expanded for province names and local election-board cases, while central institutions such as the Supreme Court, Constitutional Court, Prosecutor General's Office, Ministry of Justice, Seoul Central District Prosecutors' Office, Seoul Central District Court, and special counsel keep an item eligible.
+- Representative article priority is now exclusive article, paper article, earliest publish time, outlet priority, then wire penalty. Yonhap and Newsis no longer outrank paper articles in same-event selection.
+- Same-event dedupe now uses `normalized_event_key` plus fallback similarity/entity overlap, instead of relying only on hard-coded `article_event_key` entries.
+- Silent drops and wire duplicates are no longer expanded in the markdown exclusion list. The report summarizes duplicate removals as a count.
+- Non-exclusive Newsis items are capped more aggressively within a category unless they are exclusive or high-confidence special-counsel/prosecution/court stories.
+- Diagnostic logs print per-outlet candidate, selected, and skipped counts as `selection_stats`.
+
+Regression tests added in `tests/test_report_filters.py` cover:
+
+- `[샷!]`, `[세계포럼]`, Trump/US DOJ, and promo/education exclusions.
+- Supplementary-investigation authority stories that mention both prosecution and police.
+- `2차 종합특검` / Yoon Suk Yeol rebellion-charge summons.
+- Chungnam election-board county-election accusation exclusion.
+- HD Hyundai Heavy Industries subcontract bargaining / Yellow Envelope Act dedupe.
+- Kim Se-ui / Kim Soo-hyun defamation arrest-warrant and warrant-hearing dedupe.
+- Exclusive over paper over wire representative priority.
+
+Storage decision:
+
+- Requirements [10] and [11] conflict. This branch keeps SQLite as the source of truth and does not replace the DB engine with Google Sheets.
+- The safer next storage step is a Google Sheets mirror/export for operator review using columns such as date, published_at, source, article_type, paper_section, title, url, summary, body, crawl_source, body_fetch_status, normalized_event_key, main_actor, legal_relevance, locality, selection_status, exclusion_reason, duplicate_of, and selected_for_report.
+- Full SQLite to Google Sheets migration should be a separate architecture branch because it changes persistence semantics, row update performance, dedupe keys, cache behavior, and GitHub Actions failure modes.
+- Gemini should remain gray-zone only. Deterministic hard rules and duplicate rules should run first, and Gemini JSON decisions should be cached in `article_analysis` or a small side cache before any repeated use.
+
 ## Feedback Commands
 
 Users can send feedback in Telegram with:

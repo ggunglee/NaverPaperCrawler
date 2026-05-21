@@ -3,6 +3,7 @@ import report_generator as rg
 
 def row(title, summary="", body="", section="사회", article_type="지면", paper_section=None):
     return {
+        "id": abs(hash(title)) % 1000000,
         "title": title,
         "summary": summary,
         "body": body,
@@ -99,6 +100,21 @@ def test_schedule_items_stay_excluded_even_when_listing_mandatory_institutions()
     assert rg.is_desk_focus_article(article) is False
 
 
+def test_obvious_hard_exclusions_are_silent_in_report():
+    soft = row("[샷!] 법원 앞 풍경", summary="사진 기사.", article_type="온라인")
+    opinion = row("[세계포럼] 검찰개혁의 길", summary="오피니언.", article_type="지면")
+    foreign = row("트럼프, 미 법무부와 IRS에 새 지시", summary="미 대통령 해외 기사.", article_type="온라인")
+    promo = row("전문대, AI 무기 장착하고 광역형 비자로 유학생 유치", summary="지역혁신 중심대학 홍보.", article_type="온라인")
+
+    assert rg.hard_exclusion_reason(soft) == "obvious_soft_news"
+    assert rg.hard_exclusion_reason(opinion) == "obvious_opinion"
+    assert rg.hard_exclusion_reason(foreign) == "obvious_foreign"
+    assert rg.hard_exclusion_reason(promo) == "obvious_promo_or_education"
+
+    report = rg.render_report("20260521", [], [(soft, "obvious_soft_news", None, None)])
+    assert "[샷!]" not in report
+
+
 def test_low_value_legal_mentions_are_filtered_before_report_selection():
     for article in [
         row("[게시판] 서울남부출입국사무소, 세계인의 날 기념행사 개최", summary="출입국 행사 안내.", article_type="통신"),
@@ -147,6 +163,28 @@ def test_special_counsel_martial_law_and_residence_items_are_monitored():
         assert rg.is_desk_focus_article(article) is True
 
 
+def test_police_title_with_prosecution_policy_is_not_police_led():
+    article = row(
+        "보완수사권 기류 변화… 검찰 ‘거둬 가라’ 경찰 ‘존치 필요’",
+        summary="검경 수사권과 검찰개혁 쟁점.",
+        article_type="통신",
+    )
+
+    assert rg.is_police_led_article(article) is False
+    assert rg.is_desk_focus_article(article) is True
+
+
+def test_special_counsel_rebellion_summons_is_high_confidence():
+    article = row(
+        "2차 종합특검, 윤석열 ‘반란죄’ 내달 초 소환…尹측, 출석 의사",
+        summary="특검팀이 피의자 소환 일정을 조율한다.",
+        article_type="통신",
+    )
+
+    assert rg.is_high_confidence_special_counsel_article(article) is True
+    assert rg.is_desk_focus_article(article) is True
+
+
 def test_local_non_seoul_legal_items_are_excluded_without_national_anchor():
     local = row(
         "춘천지법, 지역 조합장 선거법 위반 벌금형",
@@ -185,6 +223,23 @@ def test_regional_court_subjects_are_excluded_even_outside_national_section():
     assert rg.is_local_non_seoul_article(supreme) is False
 
 
+def test_local_election_board_accusation_is_excluded_without_central_anchor():
+    local = row(
+        "충남선관위, 행사 협찬 물품 제공 혐의 군수선거 후보자 고발",
+        summary="도선관위가 지자체 단위 선거 사건을 고발했다.",
+        article_type="통신",
+    )
+    central = row(
+        "대법, 충남 군수선거 사건 최종 판단",
+        summary="대법원이 선거법 위반 사건을 판단했다.",
+        article_type="통신",
+    )
+
+    assert rg.is_local_non_seoul_article(local) is True
+    assert rg.hard_exclusion_reason(local) == "obvious_local"
+    assert rg.is_local_non_seoul_article(central) is False
+
+
 def test_same_event_prefers_paper_over_newsis_when_not_exclusive_or_yonhap():
     paper = row(
         "특검, 김흥준 전 육본 정책실장 입건...계엄 가담 의혹",
@@ -200,6 +255,21 @@ def test_same_event_prefers_paper_over_newsis_when_not_exclusive_or_yonhap():
     newsis.update({"id": 2, "newspaper": "뉴시스", "published_at": "2026-05-18 05:00:00", "created_at": "2026-05-18T05:00:00"})
 
     assert rg.report_article_priority(paper) < rg.report_article_priority(newsis)
+
+
+def test_representative_priority_is_exclusive_then_paper_then_wire():
+    exclusive = row("단독 특검 압수수색 착수", summary="같은 사안.", article_type="온라인")
+    paper = row("특검 압수수색 착수", summary="같은 사안.", article_type="지면")
+    yonhap = row("특검 압수수색 착수", summary="같은 사안.", article_type="통신")
+    newsis = row("특검 압수수색 착수", summary="같은 사안.", article_type="통신")
+    exclusive.update({"id": 1, "newspaper": "노컷뉴스", "published_at": "2026-05-21 09:00:00", "created_at": ""})
+    paper.update({"id": 2, "newspaper": "동아일보", "published_at": "2026-05-21 09:01:00", "created_at": ""})
+    yonhap.update({"id": 3, "newspaper": "연합뉴스", "published_at": "2026-05-21 08:59:00", "created_at": ""})
+    newsis.update({"id": 4, "newspaper": "뉴시스", "published_at": "2026-05-21 08:59:00", "created_at": ""})
+
+    assert rg.report_article_priority(exclusive) < rg.report_article_priority(paper)
+    assert rg.report_article_priority(paper) < rg.report_article_priority(yonhap)
+    assert rg.report_article_priority(yonhap) < rg.report_article_priority(newsis)
 
 
 def test_same_event_duplicates_cover_common_update_wire_rewrites():
@@ -221,3 +291,36 @@ def test_same_event_duplicates_cover_common_update_wire_rewrites():
 
     assert len(kept) == 2
     assert len(skipped) == 2
+
+
+def test_normalized_event_dedupes_hd_hyundai_and_kim_seui_cases():
+    hd_yonhap = row(
+        "대법, HD현대중공업 하청노조 단체교섭 사건 판단",
+        summary="노란봉투법 쟁점과 하청 교섭 의무가 다뤄졌다.",
+        article_type="통신",
+    )
+    hd_newsis = row(
+        "HD현대중공업 하청 교섭 판결 앞두고 노란봉투법 주목",
+        summary="대법 판단을 앞두고 단체교섭 쟁점이 부각됐다.",
+        article_type="통신",
+    )
+    kim_tv = row(
+        "김세의, 김수현 명예훼손 혐의 구속영장 청구",
+        summary="영장실질심사가 서울중앙지법에서 열린다.",
+        article_type="방송",
+    )
+    kim_newsis = row(
+        "김세의·김수현 명예훼손 영장실질심사 출석",
+        summary="구속영장 심사가 진행됐다.",
+        article_type="통신",
+    )
+    rows = []
+    for index, item in enumerate([hd_yonhap, hd_newsis, kim_tv, kim_newsis], start=1):
+        item.update({"id": index, "newspaper": "연합뉴스" if index == 1 else "뉴시스", "published_at": f"2026-05-21 08:0{index}:00", "created_at": ""})
+        rows.append(item)
+
+    kept, skipped = rg.dedupe_event_rows(rows)
+
+    assert len(kept) == 2
+    assert len(skipped) == 2
+    assert all(reason == "duplicate_wire_article" for _, reason, _, _ in skipped)

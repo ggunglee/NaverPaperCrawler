@@ -1013,9 +1013,16 @@ def generate_report(db, args):
             if row not in exclusive_rows and matches_monitor_keywords(row)
         )
         rows = exclusive_rows
+    hard_filtered_rows = [row for row in rows if not hard_exclusion_reason(row)]
+    candidate_exclusions.extend(
+        (row, hard_exclusion_reason(row), None, None)
+        for row in rows
+        if row not in hard_filtered_rows and matches_monitor_keywords(row)
+    )
+    rows = hard_filtered_rows
     non_police_rows = [row for row in rows if not is_police_led_article(row)]
     candidate_exclusions.extend(
-        (row, "police_led_candidate", None, None)
+        (row, "police_led_general_case", None, None)
         for row in rows
         if row not in non_police_rows and matches_monitor_keywords(row)
     )
@@ -1100,6 +1107,8 @@ def generate_report(db, args):
 
     report_items = []
     for category, category_rows in candidates_by_category.items():
+        category_rows, newsis_skipped = limit_newsis_rows(category_rows)
+        skipped.extend(newsis_skipped)
         items = fallback_items(category_rows)
         report_items.extend(items)
         for row, item in zip(category_rows, items):
@@ -1111,6 +1120,7 @@ def generate_report(db, args):
                 mark_analyzed=False,
             )
 
+    log_selection_stats(rows, report_items, skipped)
     report = render_report(args.date, report_items, [] if getattr(args, "suppress_skipped", False) else skipped)
     output_path = None
     if args.output_file:
@@ -1222,10 +1232,10 @@ def same_day_priority_key(row):
     time_key = row["published_at"] or row["created_at"] or ""
     return (
         0 if "단독" in title else 1,
-        0 if source == "연합뉴스" else 1,
         0 if article_type == "지면" else 1,
-        source_priority(source),
         time_key,
+        source_priority(source),
+        wire_source_penalty(source),
         row["id"],
     )
 
@@ -1243,12 +1253,35 @@ def dedupe_event_rows(rows):
     skipped = []
     by_key = {}
     for row in rows:
-        key = article_event_key(row)
+        key = normalized_event_key(row)
         if not key:
-            kept.append(row)
+            duplicate = find_probable_duplicate(row, kept)
+            if duplicate is None:
+                kept.append(row)
+                continue
+            existing = duplicate
+            current_priority = report_article_priority(row)
+            existing_priority = report_article_priority(existing)
+            if current_priority < existing_priority:
+                kept = [current if current["id"] != existing["id"] else row for current in kept]
+                skipped.append((existing, "duplicate_wire_article", 1.0, row["id"]))
+            else:
+                skipped.append((row, "duplicate_wire_article", 1.0, existing["id"]))
             continue
         existing = by_key.get(key)
         if existing is None:
+            duplicate = find_probable_duplicate(row, kept)
+            if duplicate is not None:
+                existing = duplicate
+                current_priority = report_article_priority(row)
+                existing_priority = report_article_priority(existing)
+                if current_priority < existing_priority:
+                    kept = [current if current["id"] != existing["id"] else row for current in kept]
+                    by_key[key] = row
+                    skipped.append((existing, "duplicate_wire_article", 1.0, row["id"]))
+                else:
+                    skipped.append((row, "duplicate_wire_article", 1.0, existing["id"]))
+                continue
             by_key[key] = row
             kept.append(row)
             continue
@@ -1257,9 +1290,9 @@ def dedupe_event_rows(rows):
         if current_priority < existing_priority:
             kept = [current if current["id"] != existing["id"] else row for current in kept]
             by_key[key] = row
-            skipped.append((existing, "same_event_duplicate", 1.0, row["id"]))
+            skipped.append((existing, "duplicate_wire_article", 1.0, row["id"]))
         else:
-            skipped.append((row, "same_event_duplicate", 1.0, existing["id"]))
+            skipped.append((row, "duplicate_wire_article", 1.0, existing["id"]))
     return kept, skipped
 
 
@@ -1269,33 +1302,143 @@ def report_article_priority(row):
     article_type = row["article_type"] or ""
     return (
         0 if "단독" in title else 1,
-        0 if source == "연합뉴스" else 1,
         0 if article_type == "지면" else 1,
-        source_priority(source),
         row["published_at"] or row["created_at"] or "",
+        source_priority(source),
+        wire_source_penalty(source),
         row["id"],
     )
 
 
 def source_priority(source):
     priorities = {
-        "연합뉴스": 0,
-        "경향신문": 1,
-        "한겨레": 1,
-        "동아일보": 1,
-        "한국일보": 1,
-        "조선일보": 1,
-        "중앙일보": 1,
-        "국민일보": 1,
-        "문화일보": 1,
-        "서울신문": 1,
-        "세계일보": 1,
+        "경향신문": 0,
+        "한겨레": 0,
+        "동아일보": 0,
+        "한국일보": 0,
+        "조선일보": 0,
+        "중앙일보": 0,
+        "국민일보": 0,
+        "문화일보": 0,
+        "서울신문": 0,
+        "세계일보": 0,
         "법률신문": 1,
         "노컷뉴스": 2,
-        "뉴스1": 3,
-        "뉴시스": 4,
+        "연합뉴스": 3,
+        "뉴스1": 4,
+        "뉴시스": 5,
     }
     return priorities.get(source or "", 5)
+
+
+def wire_source_penalty(source):
+    return 1 if source in {"연합뉴스", "뉴시스", "뉴스1"} else 0
+
+
+def normalized_event_key(row):
+    explicit = article_event_key(row)
+    if explicit:
+        return explicit
+    features = event_features(row)
+    entities = features["entities"]
+    actions = features["actions"]
+    cases = features["cases"]
+    if not actions:
+        return None
+    if not entities and not cases:
+        return None
+    entity_part = "+".join(sorted((entities or cases)[:3]))
+    action_part = "+".join(sorted(actions[:2]))
+    case_part = "+".join(sorted(cases[:2]))
+    return ":".join(part for part in [entity_part, case_part, action_part] if part)
+
+
+def event_features(row):
+    text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{focused_article_text(row, 700)}"
+    compact = normalize_match_text(text)
+    entity_terms = [
+        "HD현대중공업",
+        "현대중공업",
+        "김세의",
+        "김수현",
+        "윤석열",
+        "김건희",
+        "김용현",
+        "전장연",
+        "타이어뱅크",
+        "라덕연",
+        "넷플릭스",
+        "서울중앙지검",
+        "서울중앙지법",
+        "대법원",
+        "헌법재판소",
+        "법무부",
+        "특검",
+        "종합특검",
+    ]
+    case_terms = [
+        "노란봉투법",
+        "하청교섭",
+        "하청",
+        "단체교섭",
+        "명예훼손",
+        "구속영장",
+        "영장실질심사",
+        "반란죄",
+        "보완수사권",
+        "배임죄",
+        "관저이전",
+        "관저",
+        "비화폰",
+        "계엄",
+    ]
+    action_terms = [
+        "선고",
+        "소환",
+        "구속영장",
+        "영장실질심사",
+        "압수수색",
+        "기소",
+        "고발",
+        "재판",
+        "판단",
+        "구형",
+        "항소",
+        "파기환송",
+        "수사",
+        "청구",
+        "출석",
+    ]
+    return {
+        "entities": [term for term in entity_terms if normalize_match_text(term) in compact],
+        "cases": [term for term in case_terms if normalize_match_text(term) in compact],
+        "actions": [term for term in action_terms if normalize_match_text(term) in compact],
+        "tokens": title_tokens(text),
+    }
+
+
+def find_probable_duplicate(row, kept_rows):
+    row_features = event_features(row)
+    for existing in kept_rows:
+        existing_features = event_features(existing)
+        if not row_features["actions"] or not existing_features["actions"]:
+            continue
+        entity_overlap = set(row_features["entities"] + row_features["cases"]) & set(
+            existing_features["entities"] + existing_features["cases"]
+        )
+        if not entity_overlap:
+            continue
+        title_score = title_token_similarity(row["title"], existing["title"])
+        token_overlap = token_overlap_score(row_features["tokens"], existing_features["tokens"])
+        if title_score >= 0.55 or token_overlap >= 0.45:
+            return existing
+    return None
+
+
+def token_overlap_score(left, right):
+    if not left or not right:
+        return 0.0
+    return len(left & right) / min(len(left), len(right))
 
 
 def article_event_key(row):
@@ -1425,7 +1568,77 @@ def matches_monitor_keywords(row):
 def is_police_led_article(row):
     title = row["title"] or ""
     title = re.sub(r"^\s*\[[^\]]*단독[^\]]*\]\s*", "", title)
+    text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    prosecution_policy_terms = [
+        "검찰",
+        "보완수사",
+        "보완수사권",
+        "수사권",
+        "검경",
+        "검찰개혁",
+        "중수청",
+        "공소청",
+        "전건송치",
+    ]
+    if any(term in text for term in prosecution_policy_terms):
+        return False
     return "경찰" in title
+
+
+def hard_exclusion_reason(row):
+    checks = [
+        ("obvious_soft_news", is_obvious_soft_news),
+        ("obvious_opinion", is_obvious_opinion),
+        ("obvious_foreign", is_obvious_foreign),
+        ("obvious_promo_or_education", is_obvious_promo_or_education),
+        ("obvious_local", is_obvious_local),
+    ]
+    for reason, check in checks:
+        if check(row):
+            return reason
+    return None
+
+
+def is_obvious_soft_news(row):
+    title = row["title"] or ""
+    markers = ["[샷!]", "[포토]", "[사진]", "[영상]", "[동영상]", "[게시판]", "[오늘의 운세]", "오늘의 운세"]
+    return any(marker in title for marker in markers)
+
+
+def is_obvious_opinion(row):
+    title = row["title"] or ""
+    markers = ["[세계포럼]", "[시론]", "[포럼]", "[사설]", "[칼럼]", "[기고]", "[만평]", "시론]", "칼럼]"]
+    return any(marker in title for marker in markers)
+
+
+def is_obvious_foreign(row):
+    text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    foreign_context = [
+        "트럼프",
+        "미 법무부",
+        "미국 법무부",
+        "美 법무부",
+        "DOJ",
+        "IRS",
+        "미 국세청",
+        "미국 국세청",
+        "미 대통령",
+        "미국 대통령",
+        "백악관",
+        "연방대법원",
+        "미 연방",
+    ]
+    return any(term in text for term in foreign_context)
+
+
+def is_obvious_promo_or_education(row):
+    text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    promo_terms = ["전문대", "AI 무기 장착", "유학생 유치", "광역형 비자", "지역혁신 중심대학", "라이즈", "RISE"]
+    return any(term in text for term in promo_terms)
+
+
+def is_obvious_local(row):
+    return is_local_non_seoul_article(row)
 
 
 def is_foreign_incidental_article(row):
@@ -1534,6 +1747,42 @@ def is_local_non_seoul_article(row):
     text = f"{lead_text}\n{row['body'] or ''}"
     if source in {"강원CBS", "경남CBS", "광주CBS", "대구CBS", "대전CBS", "부산CBS", "전북CBS", "제주CBS"}:
         return True
+    national_override_terms = [
+        "대법",
+        "대법원",
+        "헌재",
+        "헌법재판소",
+        "헌법불합치",
+        "헌법",
+        "개헌",
+        "위헌",
+        "특검",
+        "종합특검",
+        "특검팀",
+        "계엄",
+        "비상계엄",
+        "김건희",
+        "윤석열",
+        "법무부",
+        "대검",
+        "중수청",
+        "공소청",
+        "서울중앙지검",
+        "서울중앙지법",
+    ]
+    if any(term in text for term in national_override_terms):
+        return False
+    local_election_terms = [
+        "지방선관위",
+        "도선관위",
+        "군수선거",
+        "군수 후보",
+        "시의원",
+        "군의원",
+        "지자체",
+    ]
+    if any(term in text for term in local_election_terms) and any(term in text for term in ["고발", "선거", "후보"]):
+        return True
     local_court_subjects = [
         "춘천지법",
         "춘천지방법원",
@@ -1604,32 +1853,16 @@ def is_local_non_seoul_article(row):
         term in lead_text for term in national_subject_terms
     ):
         return True
-    national_override_terms = [
-        "대법",
-        "대법원",
-        "헌재",
-        "헌법재판소",
-        "헌법불합치",
-        "헌법",
-        "개헌",
-        "위헌",
-        "특검",
-        "종합특검",
-        "특검팀",
-        "계엄",
-        "비상계엄",
-        "김건희",
-        "윤석열",
-        "법무부",
-        "대검",
-        "중수청",
-        "공소청",
-    ]
-    if any(term in text for term in national_override_terms):
-        return False
     if section == "전국":
         return True
     local_terms = [
+        "충남",
+        "충북",
+        "전남",
+        "전북",
+        "경남",
+        "경북",
+        "세종",
         "춘천",
         "강원",
         "원주",
@@ -1718,6 +1951,25 @@ def has_mandatory_legal_institution(row):
     return any(term in lead_text for term in MANDATORY_LEGAL_INSTITUTIONS)
 
 
+def is_high_confidence_special_counsel_article(row):
+    title = row["title"] or ""
+    text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    actor_terms = ["특검", "종합특검", "2차 종합특검", "특검팀", "내란 특검", "김건희 특검"]
+    action_terms = ["수사", "소환", "출석", "압수수색", "구속영장", "기소", "구형", "재판", "반란죄", "피의자"]
+    if "윤석열 소환" in text or ("윤석열" in text and "소환" in text and any(term in text for term in actor_terms)):
+        return True
+    if "반란죄" in text and any(term in text for term in actor_terms):
+        return True
+    if not any(term in text for term in actor_terms):
+        return False
+    if is_obvious_opinion(row):
+        return False
+    political_rhetoric = ["공방", "비판", "규탄", "논평", "브리핑", "정쟁"]
+    if any(term in title for term in political_rhetoric) and not any(term in text for term in action_terms):
+        return False
+    return any(term in text for term in action_terms)
+
+
 def is_desk_focus_article(row):
     title = row["title"] or ""
     section = row["paper_section"] or ""
@@ -1727,6 +1979,8 @@ def is_desk_focus_article(row):
         return False
     if any(term in title for term in ["[오늘의 주요일정]", "오늘의 주요일정", "주요일정"]):
         return False
+    if is_high_confidence_special_counsel_article(row):
+        return True
     if has_mandatory_legal_institution(row):
         return True
     if (row["article_type"] or "") == "지면" and re.match(r"^[BCD]\d+", section):
@@ -2074,8 +2328,57 @@ def lexical_vector(text, dimensions=1024):
     return [value / norm for value in vector]
 
 
+def limit_newsis_rows(rows, max_non_exclusive=2):
+    kept = []
+    skipped = []
+    non_exclusive_newsis = 0
+    for row in sorted(rows, key=report_article_priority):
+        source = row["newspaper"] or ""
+        title = row["title"] or ""
+        if source == "뉴시스" and "단독" not in title and not is_high_confidence_special_counsel_article(row):
+            non_exclusive_newsis += 1
+            if non_exclusive_newsis > max_non_exclusive:
+                skipped.append((row, "duplicate_wire_article", None, None))
+                continue
+        kept.append(row)
+    return kept, skipped
+
+
+def log_selection_stats(rows, report_items, skipped):
+    candidate_counts = defaultdict(int)
+    skipped_counts = defaultdict(int)
+    selected_counts = defaultdict(int)
+    selected_urls = {item["url"] for item in report_items}
+    for row in rows:
+        candidate_counts[row["newspaper"] or ""] += 1
+        if row["url"] in selected_urls:
+            selected_counts[row["newspaper"] or ""] += 1
+    for row, reason, score, matched_id in skipped:
+        skipped_counts[row["newspaper"] or ""] += 1
+    for source in sorted(set(candidate_counts) | set(selected_counts) | set(skipped_counts)):
+        print(
+            "selection_stats "
+            f"source={source or 'unknown'} "
+            f"candidates={candidate_counts[source]} "
+            f"selected={selected_counts[source]} "
+            f"skipped={skipped_counts[source]}"
+        )
+
+
 def render_report(report_date, items, skipped):
-    hidden_reasons = {"same_event_duplicate", "lifestyle_legal_advice", "low_value_legal_mention"}
+    hidden_reasons = {
+        "obvious_soft_news",
+        "obvious_opinion",
+        "obvious_foreign",
+        "obvious_local",
+        "obvious_promo_or_education",
+        "police_led_general_case",
+        "duplicate_wire_article",
+        "same_event_duplicate",
+        "lifestyle_legal_advice",
+        "low_value_legal_mention",
+    }
+    duplicate_count = sum(1 for item in skipped if item[1] in {"duplicate_wire_article", "same_event_duplicate"})
     skipped = [item for item in skipped if item[1] not in hidden_reasons]
     lines = []
     if not items:
@@ -2092,13 +2395,16 @@ def render_report(report_date, items, skipped):
             lines.append(item["url"])
             lines.append("")
 
-    if skipped:
+    if skipped or duplicate_count:
         lines.append("[보류/제외 기사]")
         lines.append("")
+        if duplicate_count:
+            lines.append(f"중복 제외 {duplicate_count}건")
+            lines.append("")
         similarity_rows = [
             item
             for item in skipped
-            if item[1] in {"similarity", "same_day_similarity", "same_event_duplicate"}
+            if item[1] in {"similarity", "same_day_similarity"}
         ]
         uncertain_rows = [item for item in skipped if item[1] == "category_uncertain"]
         failed_rows = [item for item in skipped if str(item[1]).startswith("analysis_failed")]
@@ -2147,6 +2453,7 @@ def render_report(report_date, items, skipped):
                     "paper_only_excluded": "지면 범위 제외",
                     "non_exclusive_candidate": "단독 아님",
                     "police_led_candidate": "경찰 주체 제외",
+                    "police_led_general_case": "경찰 주체 제외",
                     "lifestyle_legal_advice": "생활법률/상담성 기사 제외",
                     "low_value_legal_mention": "법조 단순 언급 기사 제외",
                     "desk_focus_excluded": "법조 초점 낮음",
