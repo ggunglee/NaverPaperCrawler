@@ -8,6 +8,8 @@ from pathlib import Path
 
 from config import SAFE_DIR, load_env_values
 
+LATEST_CHAT_PATH = SAFE_DIR / "telegram_latest_chat_id.txt"
+
 
 def telegram_token():
     env = load_env_values()
@@ -44,7 +46,13 @@ def latest_chat_id(token):
     for update in reversed(updates):
         chat_id = update_chat_id(update)
         if chat_id:
+            LATEST_CHAT_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LATEST_CHAT_PATH.write_text(str(chat_id), encoding="utf-8")
             return chat_id
+    if LATEST_CHAT_PATH.exists():
+        stored = LATEST_CHAT_PATH.read_text(encoding="utf-8").strip()
+        if stored:
+            return stored
     raise RuntimeError("No Telegram updates with chat id found.")
 
 

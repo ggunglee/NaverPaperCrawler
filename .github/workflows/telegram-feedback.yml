@@ -231,6 +231,7 @@ jobs:
           name: telegram-feedback-${{ github.run_id }}
           path: |
             ~/.naver_news_crawler/data/telegram_feedback.db
+            ~/.naver_news_crawler/telegram_latest_chat_id.txt
             ~/.naver_news_crawler/feedback/*.json
             qa/telegram_feedback.json
             qa/feedback_review.json
