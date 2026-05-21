@@ -1434,6 +1434,8 @@ def recommend_category(row):
         return "김건희·관저", 99, ["김건희·관저"]
     if "2차 종합특검" in text or "종합특검" in text:
         return "특검", 99, ["종합특검"]
+    if any(keyword in text for keyword in ["하도급법", "부당수취", "성과장려금", "정보제공료"]):
+        return "공정거래·기업형사", 99, ["하도급법·부당수취"]
     if any(keyword in text for keyword in ["중수청", "보완수사권", "검찰개혁", "공소청"]):
         return "검찰 수사개혁", 3, ["검찰 제도"]
     if any(keyword in text for keyword in ["감찰위", "감찰", "박상용", "대검"]):
@@ -1953,8 +1955,10 @@ def is_high_confidence_joint_investigation_article(row):
 def is_high_confidence_named_issue_article(row, allow_nonexclusive=False):
     title = row["title"] or ""
     article_type = row["article_type"] or ""
+    source = row["newspaper"] or ""
     text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
-    if not allow_nonexclusive and article_type != "지면" and "단독" not in title:
+    is_wire = article_type == "통신" or source in {"연합뉴스", "뉴스1", "뉴시스"}
+    if not allow_nonexclusive and article_type != "지면" and "단독" not in title and not is_wire:
         return False
     action_terms = [
         "수사",

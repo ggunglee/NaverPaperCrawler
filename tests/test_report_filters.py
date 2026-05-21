@@ -58,6 +58,7 @@ def test_monitor_keywords_are_single_merged_source_for_core_topics():
     }
 
     assert required <= set(rg.MONITOR_KEYWORDS)
+    assert "GS리테일" not in set(rg.MONITOR_KEYWORDS)
 
 
 def test_joint_investigation_and_residence_exclusives_are_high_confidence():
@@ -131,6 +132,21 @@ def test_gs_retail_product_story_is_not_monitored_but_hado_article_is_core():
 
     assert rg.matches_monitor_keywords(product) is False
     assert rg.matches_monitor_keywords(hado) is True
+    assert rg.is_desk_focus_article(hado) is True
+
+
+def test_gs_retail_name_alone_is_not_keyword_but_yonhap_budangsuchwi_is_core():
+    hado = row(
+        "GS리테일 '하청업체서 부당수취' 2심 벌금 15억원…무죄 뒤집혀",
+        summary="",
+        body="",
+        article_type="통신",
+    )
+    hado.update({"newspaper": "연합뉴스"})
+
+    assert "GS리테일" not in set(rg.MONITOR_KEYWORDS)
+    assert rg.matches_monitor_keywords(hado) is True
+    assert rg.recommend_category(hado)[0] == "공정거래·기업형사"
     assert rg.is_desk_focus_article(hado) is True
 
 
