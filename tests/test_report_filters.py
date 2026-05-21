@@ -76,6 +76,17 @@ def test_chosun_is_not_a_crawl_source():
     assert all("chosun.com" not in domains for domains in ONLINE_NEWS_SOURCES.values())
 
 
+def test_chosun_existing_rows_are_silently_excluded_from_report():
+    article = row(
+        "2차 특검 “CIA에 계엄 정당성 설명할 자료, 홍장원이 재가”",
+        summary="특검팀이 계엄 정당성 설명 자료를 확보했다.",
+        section="12면",
+    )
+    article.update({"newspaper": "조선일보"})
+
+    assert rg.hard_exclusion_reason(article) == "source_excluded"
+
+
 def test_joint_investigation_and_residence_exclusives_are_high_confidence():
     joint = row(
         "[단독]합수본, 신천지 '당원가입 규모' 구체화…최소 6만명",

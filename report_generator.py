@@ -1506,6 +1506,7 @@ def is_police_led_article(row):
 
 def hard_exclusion_reason(row):
     checks = [
+        ("source_excluded", is_excluded_source_article),
         ("obvious_soft_news", is_obvious_soft_news),
         ("obvious_opinion", is_obvious_opinion),
         ("obvious_foreign", is_obvious_foreign),
@@ -1518,6 +1519,10 @@ def hard_exclusion_reason(row):
         if check(row):
             return reason
     return None
+
+
+def is_excluded_source_article(row):
+    return (row["newspaper"] or "") in {"조선일보"}
 
 
 def is_newsis_article(row):
@@ -2572,6 +2577,7 @@ def log_selection_stats(rows, report_items, skipped):
 def render_report(report_date, items, skipped):
     hidden_reasons = {
         "newsis_excluded",
+        "source_excluded",
         "online_non_exclusive",
         "obvious_soft_news",
         "obvious_opinion",
