@@ -1,4 +1,5 @@
 import report_generator as rg
+from morning_report_task import online_window
 
 
 def row(title, summary="", body="", section="사회", article_type="지면", paper_section=None):
@@ -148,6 +149,49 @@ def test_gs_retail_name_alone_is_not_keyword_but_yonhap_budangsuchwi_is_core():
     assert rg.matches_monitor_keywords(hado) is True
     assert rg.recommend_category(hado)[0] == "공정거래·기업형사"
     assert rg.is_desk_focus_article(hado) is True
+
+
+def test_morning_scope_keeps_exclusive_online_without_published_at(tmp_path):
+    db = rg.ReportDatabase(tmp_path / "articles.db")
+    with db.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO articles (
+                date, newspaper, oid, paper_section, title, url, summary, body,
+                article_type, published_at, category, is_analyzed, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, ?)
+            """,
+            (
+                "20260521",
+                "노컷뉴스",
+                "",
+                "사회",
+                "[단독]합수본, 신천지 당원가입 규모 구체화",
+                "https://example.test/shincheonji",
+                "검경 합동수사본부가 정교유착 의혹을 수사한다.",
+                "검경 합동수사본부가 신천지 당원가입 규모를 확인했다.",
+                "온라인",
+                None,
+                "2026-05-21T06:00:00",
+                "2026-05-21T06:00:00",
+            ),
+        )
+
+    rows = db.morning_articles(
+        "20260521",
+        online_start="2026-05-20 18:00:00",
+        online_end="2026-05-21 06:10:00",
+        include_paper=False,
+    )
+
+    assert [item["title"] for item in rows] == ["[단독]합수본, 신천지 당원가입 규모 구체화"]
+
+
+def test_initial_online_window_has_grace_after_six():
+    _, end = online_window("20260521")
+
+    assert end.strftime("%Y-%m-%d %H:%M:%S") == "2026-05-21 06:10:00"
 
 
 def test_routine_election_politics_is_excluded_even_with_incidental_legal_words():

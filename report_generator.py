@@ -284,6 +284,17 @@ class ReportDatabase:
             """
         )
         params.extend([online_start or "", online_end or ""])
+        scope_clauses.append(
+            """
+            (
+                article_type != '지면'
+                AND published_at IS NULL
+                AND date = ?
+                AND title LIKE '%단독%'
+            )
+            """
+        )
+        params.append(report_date)
         clauses = [
             "(COALESCE(body, '') != '' OR COALESCE(summary, '') != '')",
             analyzed_clause,

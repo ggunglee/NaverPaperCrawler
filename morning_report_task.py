@@ -42,7 +42,9 @@ def report_date_value(value):
 def online_window(report_date):
     base = datetime.strptime(report_date, "%Y%m%d")
     start = datetime.combine(base.date() - timedelta(days=1), time(18, 0))
-    end = datetime.combine(base.date(), time(6, 0))
+    # Some wire articles are published a few seconds after 06:00 while still
+    # belonging to the morning batch.
+    end = datetime.combine(base.date(), time(6, 10))
     return start, end
 
 
