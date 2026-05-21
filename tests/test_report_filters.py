@@ -1,4 +1,5 @@
 import report_generator as rg
+from config import DEFAULT_BODY_KEYWORDS
 from morning_report_task import online_window
 
 
@@ -60,6 +61,13 @@ def test_monitor_keywords_are_single_merged_source_for_core_topics():
 
     assert required <= set(rg.MONITOR_KEYWORDS)
     assert "GS리테일" not in set(rg.MONITOR_KEYWORDS)
+
+
+def test_body_fetch_keywords_cover_core_recall_terms_without_gs_retail():
+    required = {"합수본", "합동수사본부", "신천지", "보완수사권", "하도급법", "부당수취", "성과장려금", "정보제공료"}
+
+    assert required <= set(DEFAULT_BODY_KEYWORDS)
+    assert "GS리테일" not in set(DEFAULT_BODY_KEYWORDS)
 
 
 def test_joint_investigation_and_residence_exclusives_are_high_confidence():

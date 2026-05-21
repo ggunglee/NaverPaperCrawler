@@ -86,6 +86,9 @@ DEFAULT_BODY_KEYWORDS = [
     "특검",
     "종합특검",
     "특검팀",
+    "합수본",
+    "합동수사본부",
+    "신천지",
     "계엄",
     "비상계엄",
     "관저",
@@ -121,6 +124,11 @@ DEFAULT_BODY_KEYWORDS = [
     "법률신문",
     "벌금형",
     "공동상해",
+    "보완수사권",
+    "하도급법",
+    "부당수취",
+    "성과장려금",
+    "정보제공료",
 ]
 DEFAULT_EXCLUDE_KEYWORDS = []
 PROJECT_DIR = Path(__file__).resolve().parent
