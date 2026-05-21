@@ -65,21 +65,10 @@ def main():
             return 0
         raise SystemExit(message)
 
-    selected_urls = report_urls(args.date)
+    report_items = load_report_items(args.date)
+    selected_urls = {item["url"] for item in report_items if item.get("url")}
     rows = load_article_rows(args.db_path, args.date, selected_urls)
-    report_rows = [
-        [
-            item["date"],
-            item["title"],
-            item["source"],
-            item["selection_status"],
-            item["duplicate_of"],
-            item["exclusion_reason"],
-            item["summary"],
-        ]
-        for item in rows
-        if item["selected_for_report"] == "TRUE" or item["selection_status"] != "raw"
-    ]
+    report_rows = report_rows_from_report(args.date, report_items) or report_rows_from_db(rows)
 
     sheet = open_sheet(args.spreadsheet_id)
     replace_worksheet(sheet, "Raw_Articles", RAW_HEADERS, [row_to_raw_values(item) for item in rows])
@@ -116,14 +105,76 @@ def replace_worksheet(sheet, title, headers, rows):
     ws.freeze(rows=1)
 
 
-def report_urls(date):
+def report_path_for_date(date):
     report_path = SAFE_DIR / "reports" / f"{date}_morning_report.md"
     if not report_path.exists():
         report_path = SAFE_DIR / "reports" / f"{date}_initial_morning_report.md"
+    return report_path
+
+
+def report_urls(date):
+    return {item["url"] for item in load_report_items(date) if item.get("url")}
+
+
+def load_report_items(date):
+    report_path = report_path_for_date(date)
     if not report_path.exists():
-        return set()
+        return []
     text = report_path.read_text(encoding="utf-8", errors="ignore")
-    return set(re.findall(r"https?://\S+", text))
+    items = []
+    current = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("\u203b"):
+            if current:
+                items.append(current)
+            title, source = split_report_heading(line[1:])
+            current = {"title": title, "source": source, "summary": "", "url": ""}
+        elif current and line.startswith("-"):
+            current["summary"] = line[1:].strip()
+        elif current and re.match(r"https?://", line):
+            current["url"] = line.split()[0]
+    if current:
+        items.append(current)
+    return items
+
+
+def split_report_heading(value):
+    if "/" not in value:
+        return value.strip(), ""
+    title, source = value.rsplit("/", 1)
+    return title.strip(), source.strip()
+
+
+def report_rows_from_report(date, items):
+    return [
+        [
+            date,
+            item.get("title", ""),
+            item.get("source", ""),
+            "selected",
+            "",
+            "",
+            item.get("summary", ""),
+        ]
+        for item in items
+    ]
+
+
+def report_rows_from_db(rows):
+    return [
+        [
+            item["date"],
+            item["title"],
+            item["source"],
+            item["selection_status"],
+            item["duplicate_of"],
+            item["exclusion_reason"],
+            item["summary"],
+        ]
+        for item in rows
+        if item["selected_for_report"] == "TRUE" or item["selection_status"] != "raw"
+    ]
 
 
 def load_article_rows(db_path, date, selected_urls):
