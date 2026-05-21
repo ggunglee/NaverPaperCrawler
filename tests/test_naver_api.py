@@ -39,7 +39,7 @@ def test_fallback_collection_uses_runtime_keywords(monkeypatch):
         datetime(2026, 5, 18, 6, 0, 0),
     )
 
-    assert searched == ["특검", "단독 특검"]
+    assert searched == ["단독", "[단독]", "특검", "단독 특검"]
     assert result["inserted"] == 1
 
 

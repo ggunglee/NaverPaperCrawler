@@ -14,6 +14,7 @@ from config import (
     NAVER_API_FALLBACK_OUTLETS,
     NAVER_API_MONITOR_KEYWORDS,
     NAVER_SID_SECTIONS,
+    NEWSPAPERS,
     ONLINE_NEWS_SOURCES,
     get_naver_api_credentials,
     should_collect_online_article,
@@ -150,7 +151,7 @@ class NaverNewsApiClient:
             "newspaper": source,
             "oid": "api",
             "paper_section": NAVER_SID_SECTIONS.get(extract_naver_oid_sid(link, originallink)[1], ""),
-            "article_type": ARTICLE_TYPE_BY_SOURCE.get(source, "온라인"),
+            "article_type": article_type_for_api_source(source),
             "published_at": format_published_at(published),
             "title": title,
             "url": link,
@@ -179,7 +180,7 @@ class NaverNewsApiClient:
             "newspaper": source,
             "oid": oid,
             "paper_section": section,
-            "article_type": ARTICLE_TYPE_BY_SOURCE.get(source, "온라인"),
+            "article_type": article_type_for_api_source(source),
             "published_at": format_published_at(published),
             "title": title,
             "url": link,
@@ -194,6 +195,12 @@ def clean_api_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def article_type_for_api_source(source: str) -> str:
+    if source in NEWSPAPERS:
+        return "온라인"
+    return ARTICLE_TYPE_BY_SOURCE.get(source, "온라인")
+
+
 def contains_any_monitor_keyword(text: str, keywords: list[str]) -> bool:
     compact_text = normalize_match_text(text)
     for keyword in keywords:
@@ -206,6 +213,9 @@ def contains_any_monitor_keyword(text: str, keywords: list[str]) -> bool:
 def exclusive_search_queries(keywords: list[str]) -> list[str]:
     seen = set()
     queries = []
+    for query in ("단독", "[단독]"):
+        seen.add(query)
+        queries.append(query)
     for keyword in keywords:
         for query in (keyword, f"단독 {keyword}"):
             if query and query not in seen:
