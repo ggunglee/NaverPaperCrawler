@@ -8,7 +8,7 @@ import urllib.request
 from datetime import datetime, time, timedelta
 from types import SimpleNamespace
 
-from config import LOG_PATH, SAFE_DIR, ensure_app_dirs, load_body_keywords, load_env_values, load_exclude_keywords, setup_logging
+from config import LOG_PATH, SAFE_DIR, ensure_app_dirs, load_body_keywords, load_env_values, load_exclude_keywords, setup_logging, telegram_recipient_ids
 from crawler import NaverPaperCrawler
 from database import Database
 from online_crawler import crawl_online_candidates
@@ -187,7 +187,10 @@ def feedback_guide_message():
 삭제할 포함 키워드.
 
 /remove_exclude_keyword
-삭제할 배제 키워드."""
+삭제할 배제 키워드.
+
+/keywords
+현재 포함/배제 키워드 확인. /show_keywords도 가능."""
 
 
 def report_has_selected_items(report):
@@ -215,30 +218,30 @@ def body_fetch_warning(stats):
 def telegram_credentials():
     env = load_env_values()
     token = env.get("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = env.get("TELEGRAM_CHAT_ID") or os.environ.get("TELEGRAM_CHAT_ID")
-    return token, chat_id
+    return token, telegram_recipient_ids(env)
 
 
 def send_telegram(text):
-    token, chat_id = telegram_credentials()
-    if not token or not chat_id:
+    token, chat_ids = telegram_credentials()
+    if not token or not chat_ids:
         raise RuntimeError("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured.")
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     chunks = split_telegram_message(text)
-    for index, chunk in enumerate(chunks, start=1):
-        prefix = f"[아침보고 {index}/{len(chunks)}]\n" if len(chunks) > 1 else ""
-        payload = urllib.parse.urlencode(
-            {
-                "chat_id": chat_id,
-                "text": prefix + chunk,
-                "disable_web_page_preview": "true",
-            }
-        ).encode("utf-8")
-        request = urllib.request.Request(url, data=payload, method="POST")
-        with urllib.request.urlopen(request, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        if not data.get("ok"):
-            raise RuntimeError("Telegram send failed.")
+    for chat_id in chat_ids:
+        for index, chunk in enumerate(chunks, start=1):
+            prefix = f"[아침보고 {index}/{len(chunks)}]\n" if len(chunks) > 1 else ""
+            payload = urllib.parse.urlencode(
+                {
+                    "chat_id": chat_id,
+                    "text": prefix + chunk,
+                    "disable_web_page_preview": "true",
+                }
+            ).encode("utf-8")
+            request = urllib.request.Request(url, data=payload, method="POST")
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            if not data.get("ok"):
+                raise RuntimeError(f"Telegram send failed for chat_id={chat_id}.")
 
 
 def split_telegram_message(text, limit=3800):
@@ -296,6 +299,8 @@ def main():
             f"mode={args.mode} "
             f"paper_total={paper['total']} paper_inserted={paper['inserted']} "
             f"online_total={online['total']} online_inserted={online['inserted']} "
+            f"lawtimes_total={online.get('lawtimes', {}).get('total', 0)} "
+            f"lawtimes_inserted={online.get('lawtimes', {}).get('inserted', 0)} "
             f"body_candidates={body_stats['candidates']} body_attempted={body_stats['attempted']} "
             f"body_fetched={body_stats['fetched']} body_failed={body_stats['failed']}"
         )

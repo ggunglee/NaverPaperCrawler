@@ -30,12 +30,12 @@ The crawler must collect articles first. Report selection and summaries use dete
 
 The legal-monitoring keywords are:
 
-- `대검찰청`, `대검`, `대법원`, `대법`, `헌법재판소`, `헌재`
-- `서울중앙지검`, `서울고검`, `법무부`, `공수처`
-- `검찰`, `법원`, `특검`
+- `대검찰청`, `대검`, `대법원`, `대법`, `헌법재판소`, `헌재`, `헌법불합치`, `헌법`, `개헌`, `위헌`
+- `서울 검찰`, `서울 법원`, `서울중앙지검`, `서울고검`, `법무부`, `공수처`
+- `검찰`, `법원`, `특검`, `종합특검`, `특검팀`, `계엄`, `비상계엄`, `관저`, `관저 이전`
 - `행정법원`, `회생법원`, `가정법원`
 - `서울중앙지법`, `서울고법`, `서울고등법원`
-- `변협`, `대한변호사협회`, `서울지방변호사회`
+- `변협`, `대한변호사협회`, `서울지방변호사회`, `양형`, `양형위원회`, `검찰개혁`, `검찰 개혁`
 
 Additional strong legal-report signals include:
 
@@ -312,6 +312,9 @@ Feedback command formats:
 
 /remove_exclude_keyword
 삭제할 배제 키워드.
+
+/keywords
+현재 포함/배제 키워드 확인. `/show_keywords`도 가능.
 ```
 
 ## Manual QA Checklist

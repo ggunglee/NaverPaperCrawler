@@ -14,8 +14,10 @@ from config import (
     NAVER_API_FALLBACK_OUTLETS,
     NAVER_API_MONITOR_KEYWORDS,
     NAVER_SID_SECTIONS,
+    NEWSPAPERS,
     ONLINE_NEWS_SOURCES,
     get_naver_api_credentials,
+    should_collect_online_article,
 )
 from database import Database
 
@@ -52,6 +54,8 @@ class NaverNewsApiClient:
                     article = self.item_to_article(item)
                     if not article:
                         continue
+                    if not should_collect_online_article(article["newspaper"], article["article_type"], article["title"]):
+                        continue
                     haystack = f"{article['title']} {article.get('summary') or ''}"
                     if any(keyword in haystack for keyword in exclude_keywords or []):
                         continue
@@ -82,16 +86,18 @@ class NaverNewsApiClient:
         total = 0
         inserted = 0
         failures = []
-        monitor_keywords = NAVER_API_MONITOR_KEYWORDS
-        for keyword in monitor_keywords:
+        monitor_keywords = normalize_keywords(keywords or NAVER_API_MONITOR_KEYWORDS)
+        for keyword in exclusive_search_queries(monitor_keywords):
             try:
                 for item in self.search(keyword):
                     article = self.fallback_item_to_article(item)
                     if not article:
                         continue
-                    if not contains_any_monitor_keyword(article["title"], monitor_keywords):
+                    if not should_collect_online_article(article["newspaper"], article["article_type"], article["title"]):
                         continue
                     haystack = f"{article['title']} {article.get('summary') or ''}"
+                    if not contains_any_monitor_keyword(haystack, monitor_keywords):
+                        continue
                     published = article.pop("_published_dt", None)
                     if published and not (start_dt <= published <= end_dt):
                         continue
@@ -114,7 +120,8 @@ class NaverNewsApiClient:
             "X-Naver-Client-Id": self.client_id,
             "X-Naver-Client-Secret": self.client_secret,
         }
-        for start in range(1, 101, 100):
+        max_start = 1001 if normalize_match_text(keyword) == normalize_match_text("단독") else 101
+        for start in range(1, max_start, 100):
             response = requests.get(
                 self.URL,
                 headers=headers,
@@ -145,7 +152,7 @@ class NaverNewsApiClient:
             "newspaper": source,
             "oid": "api",
             "paper_section": NAVER_SID_SECTIONS.get(extract_naver_oid_sid(link, originallink)[1], ""),
-            "article_type": ARTICLE_TYPE_BY_SOURCE.get(source, "온라인"),
+            "article_type": article_type_for_api_source(source),
             "published_at": format_published_at(published),
             "title": title,
             "url": link,
@@ -161,19 +168,20 @@ class NaverNewsApiClient:
         if not title or not link:
             return None
         oid, sid = extract_naver_oid_sid(link, originallink)
-        if oid not in NAVER_API_FALLBACK_OUTLETS:
+        source = NAVER_API_FALLBACK_OUTLETS.get(oid)
+        if not source and "단독" in title:
+            source = guess_source(originallink or link, title, summary) or "온라인"
+        if not source:
             return None
-        section = NAVER_SID_SECTIONS.get(sid)
-        if not section:
-            return None
+        section = NAVER_SID_SECTIONS.get(sid) or "온라인"
         published = parse_pubdate(item.get("pubDate"))
         date = published.strftime("%Y%m%d") if published else datetime.now().strftime("%Y%m%d")
         return {
             "date": date,
-            "newspaper": NAVER_API_FALLBACK_OUTLETS[oid],
+            "newspaper": source,
             "oid": oid,
             "paper_section": section,
-            "article_type": ARTICLE_TYPE_BY_SOURCE.get(NAVER_API_FALLBACK_OUTLETS[oid], "온라인"),
+            "article_type": article_type_for_api_source(source),
             "published_at": format_published_at(published),
             "title": title,
             "url": link,
@@ -188,6 +196,12 @@ def clean_api_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def article_type_for_api_source(source: str) -> str:
+    if source in NEWSPAPERS:
+        return "온라인"
+    return ARTICLE_TYPE_BY_SOURCE.get(source, "온라인")
+
+
 def contains_any_monitor_keyword(text: str, keywords: list[str]) -> bool:
     compact_text = normalize_match_text(text)
     for keyword in keywords:
@@ -195,6 +209,32 @@ def contains_any_monitor_keyword(text: str, keywords: list[str]) -> bool:
         if compact_keyword and compact_keyword in compact_text:
             return True
     return False
+
+
+def exclusive_search_queries(keywords: list[str]) -> list[str]:
+    seen = set()
+    queries = []
+    for query in ("단독", "[단독]"):
+        seen.add(query)
+        queries.append(query)
+    for keyword in keywords:
+        for query in (keyword, f"단독 {keyword}"):
+            if query and query not in seen:
+                seen.add(query)
+                queries.append(query)
+    return queries
+
+
+def normalize_keywords(keywords: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for keyword in keywords or []:
+        text = str(keyword).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 def normalize_match_text(text: str) -> str:

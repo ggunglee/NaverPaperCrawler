@@ -13,3 +13,4 @@ release_packages/
 .pytest_cache/
 .mypy_cache/
 .codex/
+.codex_tmp/

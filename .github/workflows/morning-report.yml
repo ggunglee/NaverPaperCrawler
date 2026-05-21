@@ -39,9 +39,14 @@ jobs:
       TZ: Asia/Seoul
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
-      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
+      TELEGRAM_GROUP_CHAT_ID: ${{ secrets.TELEGRAM_GROUP_CHAT_ID }}
+      TELEGRAM_GROUP_ONLY: ${{ vars.TELEGRAM_GROUP_ONLY }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID || vars.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET || vars.NAVER_CLIENT_SECRET }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || vars.GEMINI_API_KEY }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID || vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
       GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
       GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
       GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
@@ -132,6 +137,7 @@ jobs:
             FEEDBACK_FLAG="--send-feedback-guide"
           fi
           python morning_report_task.py --date today --mode "$MODE" $SEND_FLAG $FEEDBACK_FLAG $EXTRA_FLAGS --no-llm
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
 
       - name: Summarize generated report
         id: summarize
@@ -141,7 +147,9 @@ jobs:
           from pathlib import Path
           import os
           report_dir = Path.home() / ".naver_news_crawler" / "reports"
-          reports = sorted(report_dir.glob("*_morning_report.md"))
+          report_mode = os.environ.get("REPORT_MODE") or ""
+          preferred = sorted(report_dir.glob(f"*_{report_mode}_morning_report.md")) if report_mode else []
+          reports = preferred or sorted(report_dir.glob("*_morning_report.md"))
           if not reports:
               print("No report file found.")
               raise SystemExit(0)
@@ -175,11 +183,19 @@ jobs:
               Path(summary_path).write_text("\n".join(summary) + "\n", encoding="utf-8")
           print("\n".join(summary))
           PY
+        env:
+          REPORT_MODE: ${{ steps.generate.outputs.mode }}
 
       - name: Prune runtime data
         if: always()
         run: |
           python cleanup_runtime_data.py --days 30
+
+      - name: Mirror report data to Google Sheets
+        if: always()
+        continue-on-error: true
+        run: |
+          python google_sheets_mirror.py --date today --skip-if-unconfigured
 
       - name: Back up runtime data to Google Drive
         id: drive_backup

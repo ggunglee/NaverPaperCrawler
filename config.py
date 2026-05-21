@@ -72,11 +72,28 @@ DEFAULT_BODY_KEYWORDS = [
     "대법",
     "헌법재판소",
     "헌재",
+    "헌법불합치",
+    "헌법",
+    "개헌",
+    "위헌",
+    "서울 검찰",
+    "서울 법원",
     "서울중앙지검",
     "서울고검",
     "법무부",
     "서울고등법원",
     "공수처",
+    "특검",
+    "종합특검",
+    "특검팀",
+    "계엄",
+    "비상계엄",
+    "관저",
+    "관저 이전",
+    "양형",
+    "양형위원회",
+    "검찰개혁",
+    "검찰 개혁",
     "단독 검찰",
     "단독 법원",
     "단독 특검",
@@ -88,6 +105,22 @@ DEFAULT_BODY_KEYWORDS = [
     "변협",
     "대한변호사협회",
     "서울지방변호사회",
+    "대법관",
+    "고법판사",
+    "고법 판사",
+    "법관 인사",
+    "배임죄",
+    "특례법",
+    "재산관리범죄",
+    "무국적자",
+    "국적판정불가",
+    "탈북",
+    "탈북인",
+    "사증 발급",
+    "비자 발급",
+    "법률신문",
+    "벌금형",
+    "공동상해",
 ]
 DEFAULT_EXCLUDE_KEYWORDS = []
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -109,13 +142,24 @@ ONLINE_NEWS_SOURCES = {
     "뉴시스": ["newsis.com"],
     "뉴스1": ["news1.kr"],
     "연합뉴스": ["yna.co.kr"],
+    "경향신문": ["khan.co.kr"],
+    "국민일보": ["kmib.co.kr"],
+    "동아일보": ["donga.com"],
+    "문화일보": ["munhwa.com"],
+    "서울신문": ["seoul.co.kr"],
+    "세계일보": ["segye.com"],
+    "조선일보": ["chosun.com"],
+    "중앙일보": ["joongang.co.kr"],
+    "한겨레": ["hani.co.kr"],
+    "한국일보": ["hankookilbo.com"],
     "KBS": ["kbs.co.kr"],
     "SBS": ["sbs.co.kr"],
     "MBC": ["imbc.com", "mbc.co.kr"],
     "JTBC": ["jtbc.co.kr"],
     "채널A": ["ichannela.com", "channel-a.co.kr"],
-    "TV조선": ["chosun.com", "tvchosun.com"],
+    "TV조선": ["tvchosun.com"],
     "노컷뉴스": ["nocutnews.co.kr"],
+    "법률신문": ["lawtimes.co.kr"],
     "온라인": [],
 }
 
@@ -130,6 +174,7 @@ RSS_FEEDS = [
     {"source": "JTBC", "section": "사회", "url": "https://fs.jtbc.co.kr/RSS/society.xml"},
     {"source": "TV조선", "section": "정치", "url": "https://news.tvchosun.com/site/data/rss/politics.xml"},
     {"source": "TV조선", "section": "사회", "url": "https://news.tvchosun.com/site/data/rss/national.xml"},
+    {"source": "노컷뉴스", "section": "사회", "url": "https://rss.nocutnews.co.kr/category/society.xml"},
 ]
 
 ARTICLE_TYPE_BY_SOURCE = {
@@ -143,10 +188,35 @@ ARTICLE_TYPE_BY_SOURCE = {
     "채널A": "방송",
     "TV조선": "방송",
     "노컷뉴스": "온라인",
+    "법률신문": "온라인",
     "온라인": "온라인",
 }
 
+EXCLUDED_ONLINE_SOURCES = {"뉴시스"}
+BROADCAST_SOURCES = {"KBS", "SBS", "MBC", "JTBC", "채널A", "TV조선"}
+ONLINE_EXCLUSIVE_EXEMPT_SOURCES = {"연합뉴스"}
+
+
+def is_exclusive_title(title: str | None) -> bool:
+    return "단독" in (title or "")
+
+
+def should_collect_online_article(source: str | None, article_type: str | None, title: str | None) -> bool:
+    source = source or ""
+    article_type = article_type or ""
+    if source in EXCLUDED_ONLINE_SOURCES:
+        return False
+    if article_type == "지면":
+        return True
+    if source in ONLINE_EXCLUSIVE_EXEMPT_SOURCES:
+        return True
+    if article_type == "방송" or source in BROADCAST_SOURCES:
+        return is_exclusive_title(title)
+    return is_exclusive_title(title)
+
+
 NAVER_API_FALLBACK_OUTLETS = {
+    "025": "중앙일보",
     "421": "뉴스1",
     "056": "KBS",
     "214": "MBC",
@@ -263,6 +333,30 @@ def load_env_values() -> dict:
         key = re.sub(r"[^A-Z0-9_]+", "_", key.strip().upper()).strip("_")
         values[key] = value.strip().strip('"').strip("'")
     return values
+
+
+def split_env_list(value):
+    if not value:
+        return []
+    return [item.strip() for item in re.split(r"[,;\n]+", str(value)) if item.strip()]
+
+
+def telegram_recipient_ids(env=None):
+    env = env or load_env_values()
+
+    def read(key):
+        return env.get(key) or os.environ.get(key)
+
+    group_id = read("TELEGRAM_GROUP_CHAT_ID")
+    group_only = str(read("TELEGRAM_GROUP_ONLY") or "").strip().lower() in {"1", "true", "yes", "on"}
+    if group_only and group_id:
+        return [group_id]
+
+    recipients = []
+    for chat_id in [group_id, *split_env_list(read("TELEGRAM_CHAT_IDS")), read("TELEGRAM_CHAT_ID")]:
+        if chat_id and chat_id not in recipients:
+            recipients.append(chat_id)
+    return recipients
 
 
 def get_naver_api_credentials() -> tuple[str | None, str | None]:
