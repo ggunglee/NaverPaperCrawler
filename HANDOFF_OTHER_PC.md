@@ -293,6 +293,24 @@ Storage decision:
 - Full SQLite to Google Sheets migration should be a separate architecture branch because it changes persistence semantics, row update performance, dedupe keys, cache behavior, and GitHub Actions failure modes.
 - Gemini should remain gray-zone only. Deterministic hard rules and duplicate rules should run first, and Gemini JSON decisions should be cached in `article_analysis` or a small side cache before any repeated use.
 
+2026-05-21 follow-up:
+
+- `GEMINI_API_KEY` is now passed into the morning-report workflow from GitHub Secrets or Variables.
+- Gemini is wired only at the gray-zone desk-focus boundary. It does not override hard drops such as Newsis, obvious soft news, obvious opinion, foreign, local, or promo articles.
+- Gray-zone candidates include items with signals such as exclusive online, special counsel, joint investigation headquarters, prosecution/police investigation-authority issues, court/prosecution/MOJ actors, subcontracting-law rulings, residence/21gram allegations, Shincheonji, or politico-legal investigation terms.
+- Gemini decisions are requested as JSON and cached in `article_analysis.raw_response` with `gemini_include` or `gemini_exclude` status. API failure falls back to deterministic rules and records `gemini_failed`.
+- Newsis is now excluded outright from online collection and final report selection.
+- Broadcast collection now keeps only exclusive-title stories.
+- Naver API fallback now includes JoongAng Ilbo (`oid=025`) and checks title plus summary, so stories whose title lacks `특검` but summary contains the special-counsel actor can be collected.
+- Lawtimes crawling now opens the article detail page and stores body text, avoiding report summaries that only repeat the title.
+
+Google Sheets assessment:
+
+- Google Sheets is likely more stable than Drive ZIP for human inspection, manual correction, and debugging because every article row can be seen without downloading a runtime archive.
+- Google Sheets is not automatically more stable as a full DB replacement: Sheets has API quotas, slower row updates, weaker transactional behavior, and harder concurrent writes than SQLite.
+- Recommended next implementation is Sheets mirror/export first, then promote Sheets to canonical only if Actions cache plus Drive ZIP continues to lose or corrupt runtime state.
+- If promoted later, use two tabs first: `Raw_Articles` for collected rows and `Morning_Report` for selected/excluded decisions. Keep immutable URL/date/source keys so reruns update rows idempotently.
+
 ## Feedback Commands
 
 Users can send feedback in Telegram with:

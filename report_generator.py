@@ -2,13 +2,15 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
+import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from config import DB_PATH, SAFE_DIR
+from config import DB_PATH, SAFE_DIR, load_env_values, should_collect_online_article
 from crawler import NaverPaperCrawler
 from database import Database
 
@@ -1051,12 +1053,23 @@ def generate_report(db, args):
     )
     rows = value_rows
     if args.desk_focus:
-        desk_rows = [row for row in rows if is_desk_focus_article(row)]
+        desk_rows = []
+        gemini_rescued = []
+        for row in rows:
+            if is_desk_focus_article(row):
+                desk_rows.append(row)
+                continue
+            decision = gemini_gray_zone_decision(db, row) if is_gemini_gray_zone_article(row) else None
+            if decision and decision.get("include") is True:
+                desk_rows.append(row)
+                gemini_rescued.append(row["id"])
         candidate_exclusions.extend(
             (row, "desk_focus_excluded", None, None)
             for row in rows
             if row not in desk_rows and matches_monitor_keywords(row)
         )
+        if gemini_rescued:
+            print(f"gemini_gray_zone_rescued={len(gemini_rescued)} ids={','.join(str(item) for item in gemini_rescued[:20])}")
         rows = desk_rows
     if not args.all_articles:
         rows = [row for row in rows if matches_monitor_keywords(row)]
@@ -1589,6 +1602,8 @@ def is_police_led_article(row):
 
 def hard_exclusion_reason(row):
     checks = [
+        ("newsis_excluded", is_newsis_article),
+        ("online_non_exclusive", is_non_exclusive_online_article),
         ("obvious_soft_news", is_obvious_soft_news),
         ("obvious_opinion", is_obvious_opinion),
         ("obvious_foreign", is_obvious_foreign),
@@ -1599,6 +1614,18 @@ def hard_exclusion_reason(row):
         if check(row):
             return reason
     return None
+
+
+def is_newsis_article(row):
+    return (row["newspaper"] or "") == "뉴시스"
+
+
+def is_non_exclusive_online_article(row):
+    article_type = row["article_type"] or ""
+    source = row["newspaper"] or ""
+    if article_type == "방송" or source in {"KBS", "SBS", "MBC", "JTBC", "채널A", "TV조선"}:
+        return not should_collect_online_article(source, article_type, row["title"])
+    return False
 
 
 def is_obvious_soft_news(row):
@@ -1972,6 +1999,175 @@ def is_high_confidence_special_counsel_article(row):
     return any(term in text for term in action_terms)
 
 
+def is_high_confidence_joint_investigation_article(row):
+    text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    actor_terms = ["합수본", "합동수사본부", "검경 합동수사본부"]
+    action_terms = ["수사", "압수수색", "확보", "특정", "구체화", "소환", "기소", "고발"]
+    case_terms = ["신천지", "정교유착", "당원가입", "당원 명부"]
+    return (
+        any(term in text for term in actor_terms)
+        and any(term in text for term in action_terms)
+        and any(term in text for term in case_terms)
+    )
+
+
+def gemini_api_key():
+    env = load_env_values()
+    return env.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+
+
+def is_gemini_gray_zone_article(row):
+    if hard_exclusion_reason(row):
+        return False
+    title = row["title"] or ""
+    text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    gray_terms = [
+        "단독",
+        "특검",
+        "종합특검",
+        "합수본",
+        "합동수사본부",
+        "검찰",
+        "경찰",
+        "보완수사",
+        "수사권",
+        "법원",
+        "서울중앙지법",
+        "서울중앙지검",
+        "법무부",
+        "하도급법",
+        "벌금",
+        "선고",
+        "압수수색",
+        "구속영장",
+        "관저",
+        "21그램",
+        "신천지",
+        "정교유착",
+    ]
+    return any(term in text for term in gray_terms)
+
+
+def gemini_gray_zone_decision(db, row):
+    cached = cached_gemini_decision(db, row["id"])
+    if cached is not None:
+        return cached
+    key = gemini_api_key()
+    if not key:
+        return None
+    prompt = build_gemini_gray_zone_prompt(row)
+    try:
+        decision = call_gemini_json(key, prompt)
+    except Exception as exc:
+        db.save_analysis(
+            row["id"],
+            row["category"],
+            "gemini_failed",
+            raw_response=None,
+            error=str(exc),
+            mark_analyzed=False,
+        )
+        return None
+    db.save_analysis(
+        row["id"],
+        decision.get("category") or row["category"],
+        "gemini_include" if decision.get("include") else "gemini_exclude",
+        raw_response=json.dumps(decision, ensure_ascii=False),
+        error=None,
+        mark_analyzed=False,
+    )
+    return decision
+
+
+def cached_gemini_decision(db, article_id):
+    with db.connect() as conn:
+        row = conn.execute(
+            """
+            SELECT status, raw_response FROM article_analysis
+            WHERE article_id = ? AND status IN ('gemini_include', 'gemini_exclude')
+            """,
+            (article_id,),
+        ).fetchone()
+    if not row or not row["raw_response"]:
+        return None
+    try:
+        return json.loads(row["raw_response"])
+    except Exception:
+        return None
+
+
+def build_gemini_gray_zone_prompt(row):
+    text = trim_text(f"{row['summary'] or ''}\n{row['body'] or ''}", 3500)
+    return f"""
+너는 한국 법조 아침보고 기사 선별 보조자다.
+아래 기사가 법조기관·검찰·법원·특검·법무부·합동수사본부가 실질 주체이거나 사건 핵심 쟁점인 기사인지 판단하라.
+명백한 오피니언, 사진/영상성, 해외, 지방 단신, 홍보성 기사는 제외한다.
+온라인/방송은 단독 기사만 포함 대상이지만, 지면과 연합뉴스는 단독이 아니어도 포함 가능하다.
+
+반드시 JSON만 답하라.
+필드:
+include: boolean
+main_actor: string
+legal_relevance: "core" | "incidental" | "none"
+locality: "seoul" | "national" | "local" | "foreign"
+is_opinion: boolean
+is_soft_news: boolean
+is_promo: boolean
+duplicate_key: string
+reason: string
+
+기사:
+source: {row['newspaper'] or ''}
+article_type: {row['article_type'] or ''}
+paper_section: {row['paper_section'] or ''}
+title: {row['title'] or ''}
+url: {row['url'] or ''}
+text:
+{text}
+""".strip()
+
+
+def call_gemini_json(api_key, prompt):
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0,
+            "response_mime_type": "application/json",
+        },
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    text = (
+        data.get("candidates", [{}])[0]
+        .get("content", {})
+        .get("parts", [{}])[0]
+        .get("text", "")
+    )
+    return normalize_gemini_decision(json.loads(text))
+
+
+def normalize_gemini_decision(decision):
+    return {
+        "include": bool(decision.get("include")),
+        "main_actor": str(decision.get("main_actor") or ""),
+        "legal_relevance": decision.get("legal_relevance") if decision.get("legal_relevance") in {"core", "incidental", "none"} else "none",
+        "locality": decision.get("locality") if decision.get("locality") in {"seoul", "national", "local", "foreign"} else "national",
+        "is_opinion": bool(decision.get("is_opinion")),
+        "is_soft_news": bool(decision.get("is_soft_news")),
+        "is_promo": bool(decision.get("is_promo")),
+        "duplicate_key": str(decision.get("duplicate_key") or ""),
+        "reason": str(decision.get("reason") or ""),
+    }
+
+
 def is_desk_focus_article(row):
     title = row["title"] or ""
     section = row["paper_section"] or ""
@@ -1982,6 +2178,8 @@ def is_desk_focus_article(row):
     if any(term in title for term in ["[오늘의 주요일정]", "오늘의 주요일정", "주요일정"]):
         return False
     if is_high_confidence_special_counsel_article(row):
+        return True
+    if is_high_confidence_joint_investigation_article(row):
         return True
     if has_mandatory_legal_institution(row):
         return True
@@ -2369,6 +2567,8 @@ def log_selection_stats(rows, report_items, skipped):
 
 def render_report(report_date, items, skipped):
     hidden_reasons = {
+        "newsis_excluded",
+        "online_non_exclusive",
         "obvious_soft_news",
         "obvious_opinion",
         "obvious_foreign",

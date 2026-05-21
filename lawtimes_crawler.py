@@ -6,7 +6,7 @@ from urllib.parse import urljoin, urlparse, parse_qs
 import requests
 from bs4 import BeautifulSoup
 
-from config import DEFAULT_HEADERS, REQUEST_TIMEOUT
+from config import DEFAULT_HEADERS, REQUEST_TIMEOUT, should_collect_online_article
 from database import Database
 
 
@@ -52,9 +52,29 @@ class LawtimesCrawler:
 
         inserted = 0
         for article in articles:
+            article = self.enrich_article(article)
+            if not should_collect_online_article(article["newspaper"], article["article_type"], article["title"]):
+                continue
             if self.db.upsert_article(article):
                 inserted += 1
         return {"total": len(articles), "inserted": inserted, "errors": errors}
+
+    def enrich_article(self, article):
+        try:
+            response = self.session.get(article["url"], timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            response.encoding = response.apparent_encoding or response.encoding
+            detail = parse_article_detail(response.text)
+        except Exception as exc:
+            logger.warning("Lawtimes detail crawl failed: %s (%s)", article["url"], exc)
+            return article
+        if detail.get("title"):
+            article["title"] = detail["title"]
+        if detail.get("body"):
+            article["body"] = detail["body"]
+        if detail.get("summary"):
+            article["summary"] = detail["summary"]
+        return article
 
     def parse_listing(self, html, published_at: datetime | None = None):
         soup = BeautifulSoup(html, "html.parser")
@@ -111,6 +131,54 @@ def nearby_summary(link):
     if title and text.startswith(title):
         text = text[len(title):].strip()
     return text[:500]
+
+
+def parse_article_detail(html):
+    soup = BeautifulSoup(html, "html.parser")
+    for node in soup.select("script, style, iframe, noscript, button"):
+        node.decompose()
+    title = first_text(
+        soup,
+        [
+            "h1",
+            ".article-view-title",
+            ".article_title",
+            ".view_tit",
+            ".view-title",
+            "meta[property='og:title']",
+        ],
+    )
+    body = first_text(
+        soup,
+        [
+            "#article-view-content-div",
+            "#articleBody",
+            ".article-view-content",
+            ".article_body",
+            ".view_cont",
+            ".news_view",
+            "article",
+        ],
+    )
+    summary = first_text(soup, ["meta[name='description']", "meta[property='og:description']"])
+    if body and (not summary or summary == title):
+        summary = body[:350]
+    return {"title": title, "summary": summary, "body": body}
+
+
+def first_text(soup, selectors):
+    for selector in selectors:
+        node = soup.select_one(selector)
+        if not node:
+            continue
+        if node.name == "meta":
+            value = node.get("content", "")
+        else:
+            value = node.get_text(" ", strip=True)
+        value = clean_text(value)
+        if value:
+            return value
+    return ""
 
 
 def clean_text(value):

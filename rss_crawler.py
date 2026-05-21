@@ -7,7 +7,7 @@ from email.utils import parsedate_to_datetime
 
 import requests
 
-from config import ARTICLE_TYPE_BY_SOURCE, DEFAULT_HEADERS, REQUEST_TIMEOUT, RSS_FEEDS
+from config import ARTICLE_TYPE_BY_SOURCE, DEFAULT_HEADERS, REQUEST_TIMEOUT, RSS_FEEDS, should_collect_online_article
 from database import Database
 
 
@@ -44,6 +44,8 @@ class RssCrawler:
             articles = self.parse_feed(content, source, section)
             inserted = 0
             for article in articles:
+                if not should_collect_online_article(article["newspaper"], article["article_type"], article["title"]):
+                    continue
                 if self.db.upsert_article(article):
                     inserted += 1
             return {"total": len(articles), "inserted": inserted, "errors": []}

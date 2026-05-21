@@ -326,22 +326,51 @@ def test_normalized_event_dedupes_hd_hyundai_and_kim_seui_cases():
     assert all(reason == "duplicate_wire_article" for _, reason, _, _ in skipped)
 
 
-def test_newsis_non_exclusive_cap_preserves_special_counsel_exception():
-    rows = []
-    for index in range(1, 7):
-        item = row(f"법원 일반 사건 선고 {index}", summary="서울중앙지법 사건.", article_type="통신")
-        item.update({"id": index, "newspaper": "뉴시스", "published_at": f"2026-05-21 08:0{index}:00", "created_at": ""})
-        rows.append(item)
+def test_newsis_is_silently_excluded_even_for_special_counsel():
     special = row(
         "2차 종합특검, 윤석열 반란죄 소환 통보",
         summary="특검팀이 피의자 소환 일정을 통보했다.",
         article_type="통신",
     )
     special.update({"id": 99, "newspaper": "뉴시스", "published_at": "2026-05-21 09:00:00", "created_at": ""})
-    rows.append(special)
 
-    kept, skipped = rg.limit_newsis_rows(rows, max_non_exclusive=4)
+    assert rg.hard_exclusion_reason(special) == "newsis_excluded"
 
-    assert len([item for item in kept if item["newspaper"] == "뉴시스"]) == 5
-    assert special in kept
-    assert len(skipped) == 2
+
+def test_online_and_broadcast_require_exclusive_except_yonhap_and_paper():
+    online = row("특검 수사 상황", article_type="온라인")
+    online.update({"newspaper": "노컷뉴스"})
+    online_exclusive = row("[단독] 특검 수사 상황", article_type="온라인")
+    online_exclusive.update({"newspaper": "노컷뉴스"})
+    broadcast = row("특검 수사 상황", article_type="방송")
+    broadcast.update({"newspaper": "TV조선"})
+    yonhap = row("GS리테일 하도급법 위반 2심 벌금 15억원", article_type="통신")
+    yonhap.update({"newspaper": "연합뉴스"})
+
+    assert rg.hard_exclusion_reason(online) is None
+    assert rg.hard_exclusion_reason(broadcast) == "online_non_exclusive"
+    assert rg.hard_exclusion_reason(online_exclusive) is None
+    assert rg.hard_exclusion_reason(yonhap) is None
+
+
+def test_joint_investigation_shincheonji_story_is_high_confidence():
+    article = row(
+        "합수본, 신천지 '당원가입 규모' 구체화…최소 6만명",
+        summary="검경 합동수사본부가 압수수색 자료와 당원 명부를 비교해 수치를 특정했다.",
+        article_type="온라인",
+    )
+    article.update({"newspaper": "노컷뉴스"})
+
+    assert rg.is_high_confidence_joint_investigation_article(article) is True
+    assert rg.is_desk_focus_article(article) is True
+
+
+def test_gemini_gray_zone_marks_exclusive_online_legal_story_for_review():
+    article = row(
+        "[단독] 김건희, 관저 변경 관여 의혹…21그램·윤한홍 답사 동행",
+        summary="2차 종합특검팀이 관저 후보지 사전 답사 정황을 확인했다.",
+        article_type="온라인",
+    )
+    article.update({"newspaper": "중앙일보"})
+
+    assert rg.is_gemini_gray_zone_article(article) is True

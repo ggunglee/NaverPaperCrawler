@@ -182,7 +182,31 @@ ARTICLE_TYPE_BY_SOURCE = {
     "온라인": "온라인",
 }
 
+EXCLUDED_ONLINE_SOURCES = {"뉴시스"}
+BROADCAST_SOURCES = {"KBS", "SBS", "MBC", "JTBC", "채널A", "TV조선"}
+ONLINE_EXCLUSIVE_EXEMPT_SOURCES = {"연합뉴스"}
+
+
+def is_exclusive_title(title: str | None) -> bool:
+    return "단독" in (title or "")
+
+
+def should_collect_online_article(source: str | None, article_type: str | None, title: str | None) -> bool:
+    source = source or ""
+    article_type = article_type or ""
+    if source in EXCLUDED_ONLINE_SOURCES:
+        return False
+    if article_type == "지면":
+        return True
+    if source in ONLINE_EXCLUSIVE_EXEMPT_SOURCES:
+        return True
+    if article_type == "방송" or source in BROADCAST_SOURCES:
+        return is_exclusive_title(title)
+    return True
+
+
 NAVER_API_FALLBACK_OUTLETS = {
+    "025": "중앙일보",
     "421": "뉴스1",
     "056": "KBS",
     "214": "MBC",

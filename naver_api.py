@@ -16,6 +16,7 @@ from config import (
     NAVER_SID_SECTIONS,
     ONLINE_NEWS_SOURCES,
     get_naver_api_credentials,
+    should_collect_online_article,
 )
 from database import Database
 
@@ -51,6 +52,8 @@ class NaverNewsApiClient:
                 for item in self.search(keyword):
                     article = self.item_to_article(item)
                     if not article:
+                        continue
+                    if not should_collect_online_article(article["newspaper"], article["article_type"], article["title"]):
                         continue
                     haystack = f"{article['title']} {article.get('summary') or ''}"
                     if any(keyword in haystack for keyword in exclude_keywords or []):
@@ -89,9 +92,11 @@ class NaverNewsApiClient:
                     article = self.fallback_item_to_article(item)
                     if not article:
                         continue
-                    if not contains_any_monitor_keyword(article["title"], monitor_keywords):
+                    if not should_collect_online_article(article["newspaper"], article["article_type"], article["title"]):
                         continue
                     haystack = f"{article['title']} {article.get('summary') or ''}"
+                    if not contains_any_monitor_keyword(haystack, monitor_keywords):
+                        continue
                     published = article.pop("_published_dt", None)
                     if published and not (start_dt <= published <= end_dt):
                         continue
