@@ -24,6 +24,14 @@ on:
         options:
           - "false"
           - "true"
+      send_latest_report:
+        description: "Send today's morning report to the latest Telegram chat that contacted the bot"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     # 02:00 UTC is 11:00 KST. Remind if no feedback has arrived yet.
     - cron: "0 2 * * *"
@@ -116,6 +124,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_latest_test }}" = "true" ]; then
             python send_telegram_latest_chat.py --text "[아침보고 테스트] 방금 메시지를 보낸 텔레그램 방 ID로 다시 보낸 테스트입니다."
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_latest_report }}" = "true" ]; then
+            python send_telegram_latest_chat.py --latest-report --report-date today
           fi
           REMINDER_FLAG=""
           if [ "${{ github.event.schedule }}" = "0 2 * * *" ]; then

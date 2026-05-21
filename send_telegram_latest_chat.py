@@ -4,8 +4,9 @@ import os
 import urllib.parse
 import urllib.request
 from datetime import datetime
+from pathlib import Path
 
-from config import load_env_values
+from config import SAFE_DIR, load_env_values
 
 
 def telegram_token():
@@ -48,26 +49,70 @@ def latest_chat_id(token):
 
 
 def send_message(token, chat_id, text):
-    api_call(
-        token,
-        "sendMessage",
-        {
-            "chat_id": chat_id,
-            "text": text,
-            "disable_web_page_preview": "true",
-        },
-    )
+    chunks = split_telegram_message(text)
+    for index, chunk in enumerate(chunks, start=1):
+        prefix = f"[아침보고 {index}/{len(chunks)}]\n" if len(chunks) > 1 else ""
+        api_call(
+            token,
+            "sendMessage",
+            {
+                "chat_id": chat_id,
+                "text": prefix + chunk,
+                "disable_web_page_preview": "true",
+            },
+        )
+
+
+def split_telegram_message(text, limit=3800):
+    text = text.strip()
+    blocks = [block.strip() for block in text.split("\n\n") if block.strip()]
+    chunks = []
+    current = ""
+    for block in blocks:
+        candidate = f"{current}\n\n{block}".strip() if current else block
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+        current = block
+    if current:
+        chunks.append(current)
+    return chunks or [text[:limit]]
+
+
+def report_path(report_date):
+    reports_dir = SAFE_DIR / "reports"
+    if report_date == "today":
+        report_date = datetime.now().strftime("%Y%m%d")
+    candidates = [
+        reports_dir / f"{report_date}_initial_morning_report.md",
+        reports_dir / f"{report_date}_morning_report.md",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    matches = sorted(reports_dir.glob(f"{report_date}*_morning_report.md"))
+    if matches:
+        return matches[-1]
+    raise RuntimeError(f"No morning report found for {report_date}.")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Send a test message to the latest Telegram chat that contacted the bot.")
     parser.add_argument("--text", default=None, help="Message text to send.")
+    parser.add_argument("--latest-report", action="store_true", help="Send the latest morning report for the date.")
+    parser.add_argument("--report-date", default="today", help="Report date YYYYMMDD or today.")
     args = parser.parse_args()
     token = telegram_token()
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is not configured.")
     chat_id = latest_chat_id(token)
-    text = args.text or f"[아침보고 테스트] 최신 텔레그램 방 ID로 보낸 테스트 메시지입니다. {datetime.now().isoformat(timespec='seconds')}"
+    if args.latest_report:
+        path = report_path(args.report_date)
+        text = path.read_text(encoding="utf-8")
+    else:
+        text = args.text or f"[아침보고 테스트] 최신 텔레그램 방 ID로 보낸 테스트 메시지입니다. {datetime.now().isoformat(timespec='seconds')}"
     send_message(token, chat_id, text)
     print("telegram_latest_chat_sent=1")
 
