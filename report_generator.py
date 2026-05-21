@@ -1636,7 +1636,21 @@ def is_obvious_soft_news(row):
 
 def is_obvious_opinion(row):
     title = row["title"] or ""
-    markers = ["[세계포럼]", "[시론]", "[포럼]", "[사설]", "[칼럼]", "[기고]", "[만평]", "시론]", "칼럼]"]
+    markers = [
+        "[세계포럼]",
+        "[시론]",
+        "[포럼]",
+        "[사설]",
+        "[칼럼]",
+        "[기고]",
+        "[만평]",
+        "시론]",
+        "칼럼]",
+        "중요판례분석",
+        "판례평석",
+        "형법 총칙",
+        "상속분쟁",
+    ]
     return any(marker in title for marker in markers)
 
 

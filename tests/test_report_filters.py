@@ -115,6 +115,13 @@ def test_obvious_hard_exclusions_are_silent_in_report():
     assert "[샷!]" not in report
 
 
+def test_lawtimes_analysis_columns_are_obvious_opinion():
+    article = row("[2025년 중요판례분석] (9) 형법 총칙", summary="판례 분석 글.", article_type="온라인")
+    article.update({"newspaper": "법률신문"})
+
+    assert rg.hard_exclusion_reason(article) == "obvious_opinion"
+
+
 def test_low_value_legal_mentions_are_filtered_before_report_selection():
     for article in [
         row("[게시판] 서울남부출입국사무소, 세계인의 날 기념행사 개최", summary="출입국 행사 안내.", article_type="통신"),
