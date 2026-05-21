@@ -16,6 +16,14 @@ on:
         options:
           - "false"
           - "true"
+      send_latest_test:
+        description: "Send a test message to the latest Telegram chat that contacted the bot"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     # 02:00 UTC is 11:00 KST. Remind if no feedback has arrived yet.
     - cron: "0 2 * * *"
@@ -106,6 +114,9 @@ jobs:
       - name: Collect Telegram feedback
         id: collect_feedback
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_latest_test }}" = "true" ]; then
+            python send_telegram_latest_chat.py --text "[아침보고 테스트] 방금 메시지를 보낸 텔레그램 방 ID로 다시 보낸 테스트입니다."
+          fi
           REMINDER_FLAG=""
           if [ "${{ github.event.schedule }}" = "0 2 * * *" ]; then
             REMINDER_FLAG="--remind-if-empty"
