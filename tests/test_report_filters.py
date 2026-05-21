@@ -324,3 +324,24 @@ def test_normalized_event_dedupes_hd_hyundai_and_kim_seui_cases():
     assert len(kept) == 2
     assert len(skipped) == 2
     assert all(reason == "duplicate_wire_article" for _, reason, _, _ in skipped)
+
+
+def test_newsis_non_exclusive_cap_preserves_special_counsel_exception():
+    rows = []
+    for index in range(1, 7):
+        item = row(f"법원 일반 사건 선고 {index}", summary="서울중앙지법 사건.", article_type="통신")
+        item.update({"id": index, "newspaper": "뉴시스", "published_at": f"2026-05-21 08:0{index}:00", "created_at": ""})
+        rows.append(item)
+    special = row(
+        "2차 종합특검, 윤석열 반란죄 소환 통보",
+        summary="특검팀이 피의자 소환 일정을 통보했다.",
+        article_type="통신",
+    )
+    special.update({"id": 99, "newspaper": "뉴시스", "published_at": "2026-05-21 09:00:00", "created_at": ""})
+    rows.append(special)
+
+    kept, skipped = rg.limit_newsis_rows(rows, max_non_exclusive=4)
+
+    assert len([item for item in kept if item["newspaper"] == "뉴시스"]) == 5
+    assert special in kept
+    assert len(skipped) == 2

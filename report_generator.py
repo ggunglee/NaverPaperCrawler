@@ -1064,6 +1064,8 @@ def generate_report(db, args):
             rows = rows[: args.limit]
     rows = sorted(rows, key=same_day_priority_key)
     rows, early_skipped = dedupe_event_rows(rows)
+    rows, newsis_global_skipped = limit_newsis_rows(rows, max_non_exclusive=4)
+    early_skipped.extend(newsis_global_skipped)
     early_skipped = candidate_exclusions + early_skipped
     if not rows:
         report = render_report(args.date, [], [] if getattr(args, "suppress_skipped", False) else early_skipped)
