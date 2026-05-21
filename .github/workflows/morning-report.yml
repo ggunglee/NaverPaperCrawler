@@ -136,6 +136,12 @@ jobs:
             EXTRA_FLAGS=""
             FEEDBACK_FLAG="--send-feedback-guide"
           fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual test runs should go only to the private TELEGRAM_CHAT_ID.
+            export TELEGRAM_GROUP_CHAT_ID=""
+            export TELEGRAM_CHAT_IDS=""
+            export TELEGRAM_GROUP_ONLY=""
+          fi
           python morning_report_task.py --date today --mode "$MODE" $SEND_FLAG $FEEDBACK_FLAG $EXTRA_FLAGS --no-llm
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
 
@@ -215,6 +221,11 @@ jobs:
             (github.event_name != 'workflow_dispatch' || inputs.send_telegram == 'true')
           }}
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            export TELEGRAM_GROUP_CHAT_ID=""
+            export TELEGRAM_CHAT_IDS=""
+            export TELEGRAM_GROUP_ONLY=""
+          fi
           python notify_telegram.py \
             --title "[아침보고 오류 알림]" \
             --message "GitHub Actions 실행 중 점검이 필요한 단계가 있습니다.

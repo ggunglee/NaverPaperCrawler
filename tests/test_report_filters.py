@@ -1,5 +1,5 @@
 import report_generator as rg
-from config import DEFAULT_BODY_KEYWORDS
+from config import DEFAULT_BODY_KEYWORDS, NEWSPAPERS, ONLINE_NEWS_SOURCES
 from morning_report_task import online_window
 
 
@@ -68,6 +68,12 @@ def test_body_fetch_keywords_cover_core_recall_terms_without_gs_retail():
 
     assert required <= set(DEFAULT_BODY_KEYWORDS)
     assert "GS리테일" not in set(DEFAULT_BODY_KEYWORDS)
+
+
+def test_chosun_is_not_a_crawl_source():
+    assert "조선일보" not in NEWSPAPERS
+    assert "조선일보" not in ONLINE_NEWS_SOURCES
+    assert all("chosun.com" not in domains for domains in ONLINE_NEWS_SOURCES.values())
 
 
 def test_joint_investigation_and_residence_exclusives_are_high_confidence():
