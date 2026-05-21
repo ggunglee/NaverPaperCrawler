@@ -370,6 +370,18 @@ def test_police_title_with_prosecution_policy_is_not_police_led():
     assert rg.is_desk_focus_article(article) is True
 
 
+def test_prosecution_policy_article_is_not_local_due_to_regional_example():
+    article = row(
+        "보완수사권 기류 변화… 검찰 “거둬 가라” 경찰 “존치 필요”",
+        summary="일선 검사들 사이에서 보완수사권 무용론이 확산하고 있다.",
+        body="대전지검 천안지청 검사가 사례를 언급했지만 검경 수사권 제도 쟁점이 핵심이다.",
+        section="12면",
+    )
+
+    assert rg.is_local_non_seoul_article(article) is False
+    assert rg.hard_exclusion_reason(article) is None
+
+
 def test_special_counsel_rebellion_summons_is_high_confidence():
     article = row(
         "2차 종합특검, 윤석열 ‘반란죄’ 내달 초 소환…尹측, 출석 의사",
