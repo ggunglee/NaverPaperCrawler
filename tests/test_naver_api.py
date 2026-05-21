@@ -135,3 +135,27 @@ def test_collection_drops_newsis_and_nonexclusive_broadcast(monkeypatch):
     )
 
     assert result["inserted"] == 0
+
+
+def test_search_paginates_deeply_for_standalone_exclusive_query(monkeypatch):
+    client = object.__new__(NaverNewsApiClient)
+    client.client_id = "id"
+    client.client_secret = "secret"
+    starts = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"items": [{"title": "x"}] * 100}
+
+    def fake_get(url, headers, params, timeout):
+        starts.append(params["start"])
+        return FakeResponse()
+
+    monkeypatch.setattr("naver_api.requests.get", fake_get)
+
+    list(client.search("단독"))
+
+    assert starts == [1, 101, 201, 301, 401, 501, 601, 701, 801, 901]

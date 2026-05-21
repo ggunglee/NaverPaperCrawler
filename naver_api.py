@@ -120,7 +120,8 @@ class NaverNewsApiClient:
             "X-Naver-Client-Id": self.client_id,
             "X-Naver-Client-Secret": self.client_secret,
         }
-        for start in range(1, 101, 100):
+        max_start = 1001 if normalize_match_text(keyword) == normalize_match_text("단독") else 101
+        for start in range(1, max_start, 100):
             response = requests.get(
                 self.URL,
                 headers=headers,
