@@ -1248,6 +1248,7 @@ def same_day_priority_key(row):
     return (
         0 if "단독" in title else 1,
         0 if article_type == "지면" else 1,
+        yonhap_back_penalty(row),
         time_key,
         source_priority(source),
         wire_source_penalty(source),
@@ -1318,11 +1319,18 @@ def report_article_priority(row):
     return (
         0 if "단독" in title else 1,
         0 if article_type == "지면" else 1,
+        yonhap_back_penalty(row),
         row["published_at"] or row["created_at"] or "",
         source_priority(source),
         wire_source_penalty(source),
         row["id"],
     )
+
+
+def yonhap_back_penalty(row):
+    source = row["newspaper"] or ""
+    article_type = row["article_type"] or ""
+    return 1 if source == "연합뉴스" and article_type != "지면" else 0
 
 
 def source_priority(source):

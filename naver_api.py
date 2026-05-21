@@ -86,7 +86,7 @@ class NaverNewsApiClient:
         inserted = 0
         failures = []
         monitor_keywords = normalize_keywords(keywords or NAVER_API_MONITOR_KEYWORDS)
-        for keyword in monitor_keywords:
+        for keyword in exclusive_search_queries(monitor_keywords):
             try:
                 for item in self.search(keyword):
                     article = self.fallback_item_to_article(item)
@@ -166,19 +166,20 @@ class NaverNewsApiClient:
         if not title or not link:
             return None
         oid, sid = extract_naver_oid_sid(link, originallink)
-        if oid not in NAVER_API_FALLBACK_OUTLETS:
+        source = NAVER_API_FALLBACK_OUTLETS.get(oid)
+        if not source and "단독" in title:
+            source = guess_source(originallink or link, title, summary) or "온라인"
+        if not source:
             return None
-        section = NAVER_SID_SECTIONS.get(sid)
-        if not section:
-            return None
+        section = NAVER_SID_SECTIONS.get(sid) or "온라인"
         published = parse_pubdate(item.get("pubDate"))
         date = published.strftime("%Y%m%d") if published else datetime.now().strftime("%Y%m%d")
         return {
             "date": date,
-            "newspaper": NAVER_API_FALLBACK_OUTLETS[oid],
+            "newspaper": source,
             "oid": oid,
             "paper_section": section,
-            "article_type": ARTICLE_TYPE_BY_SOURCE.get(NAVER_API_FALLBACK_OUTLETS[oid], "온라인"),
+            "article_type": ARTICLE_TYPE_BY_SOURCE.get(source, "온라인"),
             "published_at": format_published_at(published),
             "title": title,
             "url": link,
@@ -200,6 +201,17 @@ def contains_any_monitor_keyword(text: str, keywords: list[str]) -> bool:
         if compact_keyword and compact_keyword in compact_text:
             return True
     return False
+
+
+def exclusive_search_queries(keywords: list[str]) -> list[str]:
+    seen = set()
+    queries = []
+    for keyword in keywords:
+        for query in (keyword, f"단독 {keyword}"):
+            if query and query not in seen:
+                seen.add(query)
+                queries.append(query)
+    return queries
 
 
 def normalize_keywords(keywords: list[str]) -> list[str]:

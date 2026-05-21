@@ -142,12 +142,22 @@ ONLINE_NEWS_SOURCES = {
     "뉴시스": ["newsis.com"],
     "뉴스1": ["news1.kr"],
     "연합뉴스": ["yna.co.kr"],
+    "경향신문": ["khan.co.kr"],
+    "국민일보": ["kmib.co.kr"],
+    "동아일보": ["donga.com"],
+    "문화일보": ["munhwa.com"],
+    "서울신문": ["seoul.co.kr"],
+    "세계일보": ["segye.com"],
+    "조선일보": ["chosun.com"],
+    "중앙일보": ["joongang.co.kr"],
+    "한겨레": ["hani.co.kr"],
+    "한국일보": ["hankookilbo.com"],
     "KBS": ["kbs.co.kr"],
     "SBS": ["sbs.co.kr"],
     "MBC": ["imbc.com", "mbc.co.kr"],
     "JTBC": ["jtbc.co.kr"],
     "채널A": ["ichannela.com", "channel-a.co.kr"],
-    "TV조선": ["chosun.com", "tvchosun.com"],
+    "TV조선": ["tvchosun.com"],
     "노컷뉴스": ["nocutnews.co.kr"],
     "법률신문": ["lawtimes.co.kr"],
     "온라인": [],
@@ -171,6 +181,16 @@ ARTICLE_TYPE_BY_SOURCE = {
     "뉴시스": "통신",
     "뉴스1": "통신",
     "연합뉴스": "통신",
+    "경향신문": "온라인",
+    "국민일보": "온라인",
+    "동아일보": "온라인",
+    "문화일보": "온라인",
+    "서울신문": "온라인",
+    "세계일보": "온라인",
+    "조선일보": "온라인",
+    "중앙일보": "온라인",
+    "한겨레": "온라인",
+    "한국일보": "온라인",
     "KBS": "방송",
     "SBS": "방송",
     "MBC": "방송",
@@ -202,7 +222,7 @@ def should_collect_online_article(source: str | None, article_type: str | None, 
         return True
     if article_type == "방송" or source in BROADCAST_SOURCES:
         return is_exclusive_title(title)
-    return True
+    return is_exclusive_title(title)
 
 
 NAVER_API_FALLBACK_OUTLETS = {

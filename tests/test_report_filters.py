@@ -13,6 +13,23 @@ def row(title, summary="", body="", section="사회", article_type="지면", pap
     }
 
 
+def test_yonhap_online_items_sort_after_other_report_sources():
+    online = row(
+        "특검 새 수사 단서 확보",
+        summary="특검팀이 핵심 피의자 조사 일정을 검토한다.",
+        article_type="온라인",
+    )
+    online.update({"newspaper": "노컷뉴스", "published_at": "2026-05-21 09:00:00", "created_at": ""})
+    yonhap = row(
+        "특검 수사 상황 브리핑",
+        summary="특검팀이 핵심 피의자 조사 일정을 검토한다.",
+        article_type="통신",
+    )
+    yonhap.update({"newspaper": "연합뉴스", "published_at": "2026-05-21 06:00:00", "created_at": ""})
+
+    assert sorted([yonhap, online], key=rg.same_day_priority_key) == [online, yonhap]
+
+
 def test_routine_election_politics_is_excluded_even_with_incidental_legal_words():
     interview = row(
         '[인터뷰]조국 "김용남, 민주당·진영 가치에 안 맞아…제가 민주진보 진영 비전에 충실한 사람"',
@@ -276,7 +293,7 @@ def test_representative_priority_is_exclusive_then_paper_then_wire():
 
     assert rg.report_article_priority(exclusive) < rg.report_article_priority(paper)
     assert rg.report_article_priority(paper) < rg.report_article_priority(yonhap)
-    assert rg.report_article_priority(yonhap) < rg.report_article_priority(newsis)
+    assert rg.report_article_priority(paper) < rg.report_article_priority(newsis)
 
 
 def test_same_event_duplicates_cover_common_update_wire_rewrites():
