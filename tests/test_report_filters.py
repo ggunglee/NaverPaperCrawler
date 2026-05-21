@@ -30,6 +30,110 @@ def test_yonhap_online_items_sort_after_other_report_sources():
     assert sorted([yonhap, online], key=rg.same_day_priority_key) == [online, yonhap]
 
 
+def test_monitor_keywords_are_single_merged_source_for_core_topics():
+    required = {
+        "대검찰청",
+        "대법원",
+        "헌법재판소",
+        "서울중앙지검",
+        "공수처",
+        "특검",
+        "종합특검",
+        "합수본",
+        "합동수사본부",
+        "김건희",
+        "관저",
+        "내란",
+        "계엄",
+        "신천지",
+        "보완수사권",
+        "하도급법",
+        "벌금형",
+        "공소청",
+        "중수청",
+        "법무부",
+        "비자",
+        "대법관",
+        "재산관리범죄",
+    }
+
+    assert required <= set(rg.MONITOR_KEYWORDS)
+
+
+def test_joint_investigation_and_residence_exclusives_are_high_confidence():
+    joint = row(
+        "[단독]합수본, 신천지 '당원가입 규모' 구체화…최소 6만명",
+        summary="검경 합동수사본부가 정교유착 의혹 수사에서 당원 명부를 확보했다.",
+        article_type="온라인",
+    )
+    residence = row(
+        "[단독] 김건희, 관저 변경 관여 의혹…21그램·윤한홍 답사 동행",
+        summary="2차 종합특검팀이 대통령 관저 후보지 사전 답사 정황을 확인했다.",
+        article_type="온라인",
+    )
+
+    assert rg.matches_monitor_keywords(joint) is True
+    assert rg.is_desk_focus_article(joint) is True
+    assert rg.matches_monitor_keywords(residence) is True
+    assert rg.is_desk_focus_article(residence) is True
+
+
+def test_nonexclusive_online_is_excluded_unless_high_confidence():
+    general = row(
+        "법무부 장관, 지역 행사 참석",
+        summary="법무부가 지역 행사에서 축사를 했다.",
+        article_type="온라인",
+    )
+    general.update({"newspaper": "노컷뉴스"})
+    high_confidence = row(
+        "합수본, 신천지 당원가입 규모 구체화",
+        summary="검경 합동수사본부가 정교유착 의혹 수사에서 당원 명부를 확보했다.",
+        article_type="온라인",
+    )
+    high_confidence.update({"newspaper": "노컷뉴스"})
+
+    assert rg.is_non_exclusive_online_article(general) is True
+    assert rg.is_non_exclusive_online_article(high_confidence) is False
+
+
+def test_gs_retail_is_not_deduped_with_generic_court_fine_story():
+    gs = row(
+        "GS리테일 '하청업체서 부당수취' 2심 벌금 15억원…무죄 뒤집혀",
+        summary="하도급법 위반 혐의로 재판에 넘겨진 GS리테일에 벌금 15억원이 선고됐다.",
+        article_type="통신",
+    )
+    other = row(
+        "남편 교제 여성 찾아가 폭행한 세 자매 벌금형",
+        summary="서울중앙지법이 공동상해 혐의 피고인들에게 벌금형을 선고했다.",
+        article_type="온라인",
+    )
+    gs.update({"id": 101, "newspaper": "연합뉴스", "published_at": "2026-05-21 06:00:08", "created_at": ""})
+    other.update({"id": 102, "newspaper": "법률신문", "published_at": "2026-05-21 06:00:10", "created_at": ""})
+
+    kept, skipped = rg.dedupe_event_rows([other, gs])
+
+    assert {item["id"] for item in kept} == {101, 102}
+    assert skipped == []
+
+
+def test_gs_retail_product_story_is_not_monitored_but_hado_article_is_core():
+    product = row(
+        "GS리테일, IP 제휴 상품 4종 모두 밀리언셀러 등극",
+        summary="유통 상품 성과를 소개한 기사다.",
+        article_type="지면",
+    )
+    hado = row(
+        "GS리테일 '하청업체서 부당수취' 2심 벌금 15억원…무죄 뒤집혀",
+        summary="하도급법 위반 혐의로 재판에 넘겨진 GS리테일에 벌금 15억원이 선고됐다.",
+        article_type="통신",
+    )
+    hado.update({"newspaper": "연합뉴스"})
+
+    assert rg.matches_monitor_keywords(product) is False
+    assert rg.matches_monitor_keywords(hado) is True
+    assert rg.is_desk_focus_article(hado) is True
+
+
 def test_routine_election_politics_is_excluded_even_with_incidental_legal_words():
     interview = row(
         '[인터뷰]조국 "김용남, 민주당·진영 가치에 안 맞아…제가 민주진보 진영 비전에 충실한 사람"',

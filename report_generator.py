@@ -53,157 +53,19 @@ def load_feedback_rule_terms():
     return terms
 
 KNOWN_CATEGORIES = {
-    "2차 종합특검": [
-        "2차 종합특검",
-        "종합특검",
-        "특검팀",
-        "특검",
-        "김건희 특검",
-        "내란 특검",
-        "채상병 특검",
-    ],
-    "내란 재판": [
-        "내란",
-        "비상계엄",
-        "계엄",
-        "윤석열",
-        "국회 해제",
-        "합참",
-        "계엄사",
-    ],
-    "김건희 재판": [
-        "김건희",
-        "도이치",
-        "주가조작",
-        "명품백",
-        "공천개입",
-    ],
-    "공수처": [
-        "공수처",
-        "고위공직자범죄수사처",
-        "오동운",
-    ],
-    "중수청": [
-        "중수청",
-        "중대범죄수사청",
-        "수사청",
-    ],
-    "검찰 수사개혁": [
-        "검찰개혁",
-        "수사권",
-        "보완수사",
-        "전건송치",
-        "공소청",
-        "검경",
-        "검찰청 폐지",
-    ],
-}
-
-MARTIAL_LAW_CONTEXT_KEYWORDS = {
-    "12·3",
-    "12.3",
-    "비상계엄",
-    "윤석열",
-    "김용현",
-    "조지호",
-    "여인형",
-    "곽종근",
-    "노상원",
-    "문상호",
-    "계엄사",
-    "합참",
-}
-
-MONITOR_KEYWORDS = sorted(
-    {
-        "특검",
-        "검찰",
-        "법원",
-        "재판",
-        "공수처",
-        "중수청",
-        "공소청",
-        "수사",
-        "기소",
-        "구속",
-        "압수수색",
-        "김건희",
-        "도이치",
-        "내란",
-        "계엄",
-        "법무부",
-        "대법원",
-        "헌법재판소",
-    },
-    key=len,
-    reverse=True,
-)
-
-
-MONITOR_KEYWORDS = sorted(
-    (
-        set(MONITOR_KEYWORDS)
-        | {
-        "대검찰청",
-        "대검",
-        "대법원",
-        "대법",
-        "헌법재판소",
-        "헌재",
-        "서울중앙지검",
-        "서울고검",
-        "법무부",
-        "서울고등법원",
-        "공수처",
-        "검찰",
-        "법원",
-        "특검",
-        "종합특검",
-        "특검팀",
-        "계엄",
-        "비상계엄",
-        "관저",
-        "관저 이전",
-        "헌법불합치",
-        "헌법",
-        "개헌",
-        "위헌",
-        "양형",
-        "양형위원회",
-        "검찰개혁",
-        "검찰 개혁",
-        "행정법원",
-        "회생법원",
-        "가정법원",
-        "서울중앙지법",
-        "서울고법",
-        "변협",
-        "대한변호사협회",
-        "서울지방변호사회",
-        "감찰",
-        "감찰위",
-        "불기소",
-        "약식기소",
-        "파산",
-        "회생",
-        "변호사",
-        "비자",
-        }
-    )
-    - {"검사"},
-    key=len,
-    reverse=True,
-)
-KNOWN_CATEGORIES = {
-    "특검": ["특검", "종합특검", "내란 특검", "김건희 특검", "조작기소 특검", "대장동 특검"],
-    "검찰 수사개혁": ["검찰개혁", "수사권", "보완수사", "중수청", "중대범죄수사청", "공소청"],
-    "검찰 처분": ["불기소", "약식기소", "기소", "고소", "각하", "서울중앙지검", "서울고검"],
-    "검찰 감찰": ["감찰", "감찰위", "대검", "박상용", "연어", "술 파티"],
-    "법무부": ["법무부", "비자", "비자 발급", "사증 발급", "출입국", "체류", "귀화", "무국적자", "국적판정불가", "탈북"],
-    "법원": ["법원", "대법원", "대법", "대법관", "고법판사", "고법 판사", "서울중앙지법", "서울고법", "서울고등법원", "행정법원", "회생법원", "가정법원", "벌금형", "공동상해"],
-    "헌법재판": ["헌법재판소", "헌재"],
-    "법조 제도": ["변협", "대한변호사협회", "서울지방변호사회", "회생", "파산", "변호사", "배임죄", "특례법", "재산관리범죄", "법관 인사"],
-    "공수처": ["공수처", "고위공직자범죄수사처"],
+    "특검": ["2차 종합특검", "종합특검", "특검팀", "특검", "김건희 특검", "내란 특검", "채상병 특검", "대장동 특검"],
+    "합동수사": ["합수본", "합동수사본부", "검경 합동수사본부", "정교유착", "신천지", "당원가입", "당원 명부"],
+    "내란·계엄": ["12·3", "12.3", "내란", "비상계엄", "계엄", "윤석열", "김용현", "조지호", "여인형", "곽종근", "노상원", "문상호", "계엄사", "합참", "반란죄"],
+    "김건희·관저": ["김건희", "관저", "관저 이전", "21그램", "윤한홍", "도이치", "주가조작", "명품백", "공천개입"],
+    "검찰 수사개혁": ["검찰개혁", "검찰 개혁", "수사권", "보완수사", "보완수사권", "전건송치", "중수청", "중대범죄수사청", "수사청", "공소청", "검경", "검찰청 폐지"],
+    "검찰 처분": ["대검찰청", "대검", "검찰", "불기소", "약식기소", "기소", "고소", "각하", "구속", "압수수색", "서울중앙지검", "서울고검"],
+    "검찰 감찰": ["감찰", "감찰위", "박상용", "연어", "술 파티"],
+    "법무부": ["법무부", "비자", "비자 발급", "사증 발급", "출입국", "체류", "귀화", "무국적자", "국적판정불가", "탈북", "탈북인"],
+    "법원": ["법원", "재판", "판결", "선고", "구형", "대법원", "대법", "대법관", "고법판사", "고법 판사", "서울중앙지법", "서울고법", "서울고등법원", "행정법원", "회생법원", "가정법원", "벌금형", "공동상해"],
+    "헌법재판": ["헌법재판소", "헌재", "헌법불합치", "헌법", "개헌", "위헌"],
+    "법조 제도": ["변협", "대한변호사협회", "서울지방변호사회", "회생", "파산", "변호사", "배임죄", "특례법", "재산관리범죄", "재산관리범죄 특례법", "법관 인사", "양형", "양형위원회", "양형기준"],
+    "공수처": ["공수처", "고위공직자범죄수사처", "오동운"],
+    "공정거래·기업형사": ["하도급법", "부당수취", "성과장려금", "정보제공료", "공정거래법", "과점지위"],
 }
 
 MARTIAL_LAW_CONTEXT_KEYWORDS = {
@@ -211,68 +73,49 @@ MARTIAL_LAW_CONTEXT_KEYWORDS = {
     "12.3",
     "비상계엄",
     "내란",
-    "윤석열",
-    "조지호",
-    "이상민",
     "계엄",
+    "윤석열",
+    "김용현",
+    "조지호",
+    "여인형",
+    "곽종근",
+    "노상원",
+    "문상호",
+    "이상민",
+    "계엄사",
+    "합참",
     "특검",
 }
 
 MONITOR_KEYWORDS = sorted(
     {
-        "대검찰청",
-        "대검",
-        "대법원",
-        "대법",
-        "헌법재판소",
-        "헌재",
-        "서울중앙지검",
-        "서울고검",
-        "법무부",
-        "서울고등법원",
-        "공수처",
-        "검찰",
-        "법원",
-        "특검",
-        "행정법원",
-        "회생법원",
-        "가정법원",
-        "서울중앙지법",
-        "서울고법",
-        "변협",
-        "대한변호사협회",
-        "서울지방변호사회",
-        "중수청",
-        "공소청",
-        "보완수사",
-        "감찰",
-        "불기소",
-        "약식기소",
-        "파산",
-        "회생",
-        "비자",
-        "출입국",
-        "대법관",
-        "고법판사",
-        "고법 판사",
-        "법관 인사",
-        "배임죄",
-        "특례법",
-        "재산관리범죄",
-        "무국적자",
-        "국적판정불가",
-        "탈북",
-        "탈북인",
-        "사증 발급",
-        "비자 발급",
-        "벌금형",
-        "공동상해",
-    },
+        keyword
+        for keywords in KNOWN_CATEGORIES.values()
+        for keyword in keywords
+    }
+    | {
+        "서울중앙지방법원",
+        "대통령 관저",
+        "내란 선전",
+        "반란 우두머리",
+        "공소취소",
+        "구속영장",
+        "영장실질심사",
+        "압수수색 영장",
+        "국가 배상",
+        "국가배상",
+        "하청업체",
+        "벌금",
+        "항소심",
+    }
+    - {"검사"},
     key=len,
     reverse=True,
 )
 
 MANDATORY_LEGAL_INSTITUTIONS = [
+    "대검찰청",
+    "대검",
     "서울중앙지검",
     "서울중앙지법",
     "서울중앙지방법원",
@@ -1358,6 +1201,21 @@ def wire_source_penalty(source):
     return 1 if source in {"연합뉴스", "뉴시스", "뉴스1"} else 0
 
 
+GENERIC_EVENT_ENTITIES = {
+    "서울중앙지검",
+    "서울중앙지법",
+    "대법원",
+    "헌법재판소",
+    "법무부",
+    "특검",
+    "종합특검",
+}
+
+
+def specific_event_entities(features):
+    return [entity for entity in features["entities"] if entity not in GENERIC_EVENT_ENTITIES]
+
+
 def normalized_event_key(row):
     explicit = article_event_key(row)
     if explicit:
@@ -1368,9 +1226,10 @@ def normalized_event_key(row):
     cases = features["cases"]
     if not actions:
         return None
-    if not entities and not cases:
+    specific_entities = specific_event_entities(features)
+    if not specific_entities and not cases:
         return None
-    entity_part = "+".join(sorted((entities or cases)[:3]))
+    entity_part = "+".join(sorted((specific_entities or cases)[:3]))
     action_part = "+".join(sorted(actions[:2]))
     case_part = "+".join(sorted(cases[:2]))
     return ":".join(part for part in [entity_part, case_part, action_part] if part)
@@ -1382,10 +1241,17 @@ def event_features(row):
     entity_terms = [
         "HD현대중공업",
         "현대중공업",
+        "GS리테일",
+        "여기어때",
+        "야놀자",
+        "신천지",
         "김세의",
         "김수현",
+        "정원오",
         "윤석열",
         "김건희",
+        "21그램",
+        "윤한홍",
         "김용현",
         "전장연",
         "타이어뱅크",
@@ -1412,6 +1278,12 @@ def event_features(row):
         "배임죄",
         "관저이전",
         "관저",
+        "하도급법",
+        "부당수취",
+        "성과장려금",
+        "정보제공료",
+        "정교유착",
+        "당원가입",
         "비화폰",
         "계엄",
     ]
@@ -1442,18 +1314,24 @@ def event_features(row):
 
 def find_probable_duplicate(row, kept_rows):
     row_features = event_features(row)
+    row_specific_entities = set(specific_event_entities(row_features))
     for existing in kept_rows:
         existing_features = event_features(existing)
         if not row_features["actions"] or not existing_features["actions"]:
             continue
-        entity_overlap = set(row_features["entities"] + row_features["cases"]) & set(
-            existing_features["entities"] + existing_features["cases"]
-        )
-        if not entity_overlap:
+        existing_specific_entities = set(specific_event_entities(existing_features))
+        specific_overlap = row_specific_entities & existing_specific_entities
+        case_overlap = set(row_features["cases"]) & set(existing_features["cases"])
+        if row_specific_entities or existing_specific_entities:
+            if not specific_overlap:
+                continue
+        elif not case_overlap:
             continue
         title_score = title_token_similarity(row["title"], existing["title"])
         token_overlap = token_overlap_score(row_features["tokens"], existing_features["tokens"])
-        if title_score >= 0.55 or token_overlap >= 0.45:
+        if specific_overlap and (title_score >= 0.55 or token_overlap >= 0.45):
+            return existing
+        if case_overlap and (title_score >= 0.75 or token_overlap >= 0.65):
             return existing
     return None
 
@@ -1550,8 +1428,12 @@ def is_duplicate_claim(db, category, vector, threshold):
 
 def recommend_category(row):
     text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{trim_text(row['body'] or '', 1200)}"
+    if any(keyword in text for keyword in ["합수본", "합동수사본부", "검경 합동수사본부"]):
+        return "합동수사", 99, ["합수본"]
+    if any(keyword in text for keyword in ["김건희", "관저", "21그램", "윤한홍"]):
+        return "김건희·관저", 99, ["김건희·관저"]
     if "2차 종합특검" in text or "종합특검" in text:
-        return "2차 종합특검", 99, ["종합특검"]
+        return "특검", 99, ["종합특검"]
     if any(keyword in text for keyword in ["중수청", "보완수사권", "검찰개혁", "공소청"]):
         return "검찰 수사개혁", 3, ["검찰 제도"]
     if any(keyword in text for keyword in ["감찰위", "감찰", "박상용", "대검"]):
@@ -1596,6 +1478,7 @@ def is_police_led_article(row):
         "검찰",
         "보완수사",
         "보완수사권",
+        "존치",
         "수사권",
         "검경",
         "검찰개혁",
@@ -1610,13 +1493,13 @@ def is_police_led_article(row):
 
 def hard_exclusion_reason(row):
     checks = [
-        ("newsis_excluded", is_newsis_article),
-        ("online_non_exclusive", is_non_exclusive_online_article),
         ("obvious_soft_news", is_obvious_soft_news),
         ("obvious_opinion", is_obvious_opinion),
         ("obvious_foreign", is_obvious_foreign),
         ("obvious_promo_or_education", is_obvious_promo_or_education),
         ("obvious_local", is_obvious_local),
+        ("newsis_excluded", is_newsis_article),
+        ("online_non_exclusive", is_non_exclusive_online_article),
     ]
     for reason, check in checks:
         if check(row):
@@ -1631,14 +1514,36 @@ def is_newsis_article(row):
 def is_non_exclusive_online_article(row):
     article_type = row["article_type"] or ""
     source = row["newspaper"] or ""
+    title = row["title"] or ""
     if article_type == "방송" or source in {"KBS", "SBS", "MBC", "JTBC", "채널A", "TV조선"}:
         return not should_collect_online_article(source, article_type, row["title"])
-    return False
+    if is_high_confidence_special_counsel_article(row) or is_high_confidence_joint_investigation_article(row):
+        return False
+    if is_high_confidence_named_issue_article(row, allow_nonexclusive=True):
+        return False
+    if article_type == "지면" or source in {"연합뉴스", "뉴시스", "뉴스1"}:
+        return False
+    if "단독" in title:
+        return False
+    return article_type == "온라인"
 
 
 def is_obvious_soft_news(row):
     title = row["title"] or ""
-    markers = ["[샷!]", "[포토]", "[사진]", "[영상]", "[동영상]", "[게시판]", "[오늘의 운세]", "오늘의 운세"]
+    markers = [
+        "[샷!]",
+        "[포토]",
+        "[사진]",
+        "[영상]",
+        "[동영상]",
+        "[게시판]",
+        "[오늘의 운세]",
+        "오늘의 운세",
+        "부친상",
+        "모친상",
+        "별세",
+        "교수 임용",
+    ]
     return any(marker in title for marker in markers)
 
 
@@ -1652,6 +1557,7 @@ def is_obvious_opinion(row):
         "[칼럼]",
         "[기고]",
         "[만평]",
+        "[횡설수설",
         "시론]",
         "칼럼]",
         "중요판례분석",
@@ -1684,7 +1590,16 @@ def is_obvious_foreign(row):
 
 def is_obvious_promo_or_education(row):
     text = f"{row['title'] or ''}\n{row['summary'] or ''}\n{row['body'] or ''}"
-    promo_terms = ["전문대", "AI 무기 장착", "유학생 유치", "광역형 비자", "지역혁신 중심대학", "라이즈", "RISE"]
+    promo_terms = [
+        "현장체험학습",
+        "전문대",
+        "AI 무기 장착",
+        "유학생 유치",
+        "광역형 비자",
+        "지역혁신 중심대학",
+        "라이즈",
+        "RISE",
+    ]
     return any(term in text for term in promo_terms)
 
 
@@ -1761,6 +1676,8 @@ def is_low_value_legal_mention(row):
     title = row["title"] or ""
     summary = row["summary"] or ""
     text = f"{title}\n{summary}\n{row['body'] or ''}"
+    if "김건희" in text and "쥴리" in text and not any(term in text for term in ["특검", "수사", "기소", "재판", "선고", "도이치", "관저"]):
+        return True
     if any(term in title for term in ["[게시판]", "[기억할 오늘]", "교수 임용", "기념행사 개최", "세계인의 날"]):
         return True
     if any(term in title for term in ["부친상", "모친상", "배우자상", "장인상", "결혼", "개업", "인사이동"]):
@@ -2033,6 +1950,46 @@ def is_high_confidence_joint_investigation_article(row):
     )
 
 
+def is_high_confidence_named_issue_article(row, allow_nonexclusive=False):
+    title = row["title"] or ""
+    article_type = row["article_type"] or ""
+    text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
+    if not allow_nonexclusive and article_type != "지면" and "단독" not in title:
+        return False
+    action_terms = [
+        "수사",
+        "확보",
+        "확인",
+        "구체화",
+        "관여",
+        "답사",
+        "압수수색",
+        "소환",
+        "기소",
+        "고발",
+        "선고",
+        "벌금",
+        "벌금형",
+        "구속영장",
+        "영장실질심사",
+        "재판",
+        "2심",
+        "항소심",
+        "무죄",
+        "뒤집혀",
+    ]
+    if any(term in text for term in ["합수본", "합동수사본부", "신천지"]):
+        return any(term in text for term in action_terms)
+    if any(term in text for term in ["관저", "21그램", "윤한홍"]):
+        return "김건희" in text or "특검" in text
+    if "김건희" in text:
+        companion_terms = ["관저", "21그램", "윤한홍", "특검", "도이치", "주가조작", "공천개입", "명품백"]
+        return any(term in text for term in companion_terms) and any(term in text for term in action_terms + ["의혹"])
+    if any(term in text for term in ["하도급법", "부당수취", "성과장려금", "정보제공료"]):
+        return any(term in text for term in action_terms)
+    return False
+
+
 def gemini_api_key():
     env = load_env_values()
     return env.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -2203,6 +2160,8 @@ def is_desk_focus_article(row):
         return True
     if is_high_confidence_joint_investigation_article(row):
         return True
+    if is_high_confidence_named_issue_article(row):
+        return True
     if has_mandatory_legal_institution(row):
         return True
     if (row["article_type"] or "") == "지면" and re.match(r"^[BCD]\d+", section):
@@ -2280,6 +2239,11 @@ def is_desk_focus_article(row):
         return False
     strong_terms = [
         "보완수사권",
+        "합수본",
+        "합동수사본부",
+        "관저",
+        "김건희",
+        "신천지",
         "중수청",
         "공소청",
         "검찰개혁",
@@ -2312,9 +2276,7 @@ def is_desk_focus_article(row):
         "통보",
         "파산",
         "회생",
-        "관저",
         "계엄",
-        "김건희",
         "결심공판",
         "구형",
         "알선수재",
