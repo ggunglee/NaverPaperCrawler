@@ -629,7 +629,7 @@ def parse_args():
     parser.add_argument("--limit", type=int, help="Limit pending articles for test runs.")
     parser.add_argument("--output-file", action="store_true", help="Save markdown report under the app reports folder.")
     parser.add_argument("--no-llm", action="store_true", help="Compatibility flag; reports are always deterministic.")
-    parser.add_argument("--embedding-backend", choices=["auto", "sentence", "lexical"], default="auto")
+    parser.add_argument("--embedding-backend", choices=["auto", "sentence", "lexical"], default="lexical")
     parser.add_argument("--similarity-threshold", type=float, default=SIMILARITY_THRESHOLD)
     parser.add_argument(
         "--same-day-threshold",
@@ -1629,49 +1629,14 @@ def is_foreign_incidental_article(row):
     title = row["title"] or ""
     text = f"{title}\n{row['summary'] or ''}\n{row['body'] or ''}"
     foreign_terms = [
-        "데일리메일",
-        "외신",
-        "현지시각",
-        "현지시간",
-        "영국",
-        "미국",
-        "일본",
-        "중국",
-        "프랑스",
-        "독일",
-        "브라질",
-        "인도",
-        "Daily Mail",
-        "Reuters",
-        "AP통신",
-        "BBC",
-        "CNN",
+        "데일리메일", "외신", "현지시각", "현지시간", "Daily Mail", "Reuters", "AP통신", "BBC", "CNN", "AFP", "로이터",
+        "영국", "미국", "일본", "중국", "프랑스", "독일", "브라질", "인도", "러시아", "우크라이나",
+        "이스라엘", "팔레스타인", "이란", "베트남", "대만", "홍콩", "호주", "캐나다", "멕시코",
+        "볼리비아", "칠레", "아르헨티나", "이탈리아", "스페인", "스위스", "네덜란드", "사우디", "아랍", "중동"
     ]
-    domestic_anchor_terms = [
-        "대법",
-        "대법원",
-        "헌재",
-        "헌법재판소",
-        "법무부",
-        "특검",
-        "공수처",
-        "대검",
-        "중수청",
-        "공소청",
-        "서울중앙지검",
-        "서울고검",
-        "서울중앙지법",
-        "서울고법",
-        "서울고등법원",
-        "서울행정법원",
-        "김건희",
-        "윤석열",
-    ]
-    if not any(term in text for term in foreign_terms):
-        return False
-    if any(term in text for term in domestic_anchor_terms):
-        return False
-    return True
+    if any(term in text for term in foreign_terms):
+        return True
+    return False
 
 
 def is_lifestyle_legal_advice(row):
@@ -2328,24 +2293,26 @@ def is_desk_focus_article(row):
 
 
 def split_sentences(text, prefer_kss=False):
-    text = re.sub(r"\s+", " ", text or "").strip()
     if not text:
         return []
     if prefer_kss:
         try:
             import kss
-
-            return [sentence.strip() for sentence in kss.split_sentences(text) if sentence.strip()]
+            text_clean = re.sub(r"\s+", " ", text).strip()
+            return [sentence.strip() for sentence in kss.split_sentences(text_clean) if sentence.strip()]
         except ImportError:
             pass
-    decimal_placeholder = "<DECIMAL_POINT>"
-    text = re.sub(r"(?<=\d)\.(?=\d)", decimal_placeholder, text)
-    parts = re.split(r"(?<=[.!?。])\s+|(?<=[.!?。])(?=[가-힣A-Za-z0-9\"'“‘])", text)
+    # Split by newlines first to prevent merging headers/paragraphs lacking punctuation
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
     sentences = []
-    for part in parts:
-        part = part.replace(decimal_placeholder, ".").strip()
-        if part:
-            sentences.append(part)
+    decimal_placeholder = "<DECIMAL_POINT>"
+    for line in lines:
+        line = re.sub(r"(?<=\d)\.(?=\d)", decimal_placeholder, line)
+        parts = re.split(r"(?<=[.!?。])\s+|(?<=[.!?。])(?=[가-힣A-Za-z0-9\"'“‘])", line)
+        for part in parts:
+            part = part.replace(decimal_placeholder, ".").strip()
+            if part:
+                sentences.append(part)
     return sentences
 
 
@@ -3111,6 +3078,9 @@ def sentence_has_source_overlap(sentence, row):
 
 
 def summary_passes_quality_gate(summary, row):
+    raw_summary = summary or ""
+    if ".." in raw_summary or "..." in raw_summary or raw_summary.strip().endswith("..") or raw_summary.strip().endswith("..."):
+        return False
     summary = polish_report_summary(summary, row)
     if not summary or len(summary) < 40:
         return False

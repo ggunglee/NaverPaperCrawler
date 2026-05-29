@@ -2,7 +2,6 @@ from datetime import datetime, timedelta
 
 from config import load_body_keywords, load_exclude_keywords
 from database import Database
-from lawtimes_crawler import LawtimesCrawler
 from naver_api import NaverNewsApiClient
 from rss_crawler import RssCrawler
 
@@ -30,7 +29,6 @@ def crawl_online_candidates(
     if db.crawl_run_completed(run_key):
         return {
             "rss": {"total": 0, "inserted": 0, "errors": []},
-            "lawtimes": {"total": 0, "inserted": 0, "errors": []},
             "api": {"total": 0, "inserted": 0, "failures": []},
             "total": 0,
             "inserted": 0,
@@ -43,7 +41,6 @@ def crawl_online_candidates(
     db.start_crawl_run(run_key)
     try:
         rss_result = RssCrawler(db).crawl_all()
-        lawtimes_result = LawtimesCrawler(db).crawl_latest(published_at=end_dt)
         api = NaverNewsApiClient(db)
         if api.available():
             api_result = api.collect_fallback_outlets(
@@ -59,16 +56,13 @@ def crawl_online_candidates(
         raise
 
     errors = list(rss_result.get("errors", []))
-    errors.extend(lawtimes_result.get("errors", []))
     errors.extend(api_result.get("failures", []))
     result = {
         "rss": rss_result,
-        "lawtimes": lawtimes_result,
         "api": api_result,
-        "total": rss_result.get("total", 0) + lawtimes_result.get("total", 0) + api_result.get("total", 0),
+        "total": rss_result.get("total", 0) + api_result.get("total", 0),
         "inserted": (
             rss_result.get("inserted", 0)
-            + lawtimes_result.get("inserted", 0)
             + api_result.get("inserted", 0)
         ),
         "errors": errors,

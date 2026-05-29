@@ -47,6 +47,16 @@ CRAWLER_SELECTORS = {
         "div#articeBody",
         "div#articleBodyContents",
         "div.newsct_article",
+        "div.news_cnt_detail_wrap",  # 매일경제
+        ".news_cnt_detail_wrap",
+        ".art_body",                 # 경향신문
+        ".article_body",             # 중앙일보
+        ".article-view-content",     # 법조/일반
+        "#article-view-content-div",
+        ".view_cont",
+        ".news_view",
+        ".article-text",             # 한겨레
+        "div.article_txt",           # 동아일보
         "article",
     ],
     "remove_from_body": ["script", "style", "iframe", "noscript", "button", "em.img_desc", ".img_desc"],
@@ -120,7 +130,6 @@ DEFAULT_BODY_KEYWORDS = [
     "탈북인",
     "사증 발급",
     "비자 발급",
-    "법률신문",
     "벌금형",
     "공동상해",
     "보완수사권",
@@ -165,7 +174,8 @@ ONLINE_NEWS_SOURCES = {
     "채널A": ["ichannela.com", "channel-a.co.kr"],
     "TV조선": ["tvchosun.com"],
     "노컷뉴스": ["nocutnews.co.kr"],
-    "법률신문": ["lawtimes.co.kr"],
+    "로리더": ["lawleader.co.kr"],
+    "법률저널": ["lec.co.kr"],
     "온라인": [],
 }
 
@@ -174,6 +184,14 @@ RSS_FEEDS = [
     {"source": "뉴시스", "section": "사회", "url": "https://nwww.newsis.com/RSS/society.xml"},
     {"source": "연합뉴스", "section": "정치", "url": "https://www.yna.co.kr/rss/politics.xml"},
     {"source": "연합뉴스", "section": "사회", "url": "https://www.yna.co.kr/rss/society.xml"},
+    {"source": "경향신문", "section": "정치", "url": "https://www.khan.co.kr/rss/rssdata/politic_news.xml"},
+    {"source": "경향신문", "section": "사회", "url": "https://www.khan.co.kr/rss/rssdata/society_news.xml"},
+    {"source": "한겨레", "section": "정치", "url": "http://www.hani.co.kr/rss/politics/"},
+    {"source": "한겨레", "section": "사회", "url": "http://www.hani.co.kr/rss/society/"},
+    {"source": "동아일보", "section": "정치", "url": "http://rss.donga.com/politics.xml"},
+    {"source": "동아일보", "section": "사회", "url": "http://rss.donga.com/national.xml"},
+    {"source": "매일경제", "section": "정치", "url": "https://www.mk.co.kr/rss/30200030/"},
+    {"source": "매일경제", "section": "사회", "url": "https://www.mk.co.kr/rss/50400012/"},
     {"source": "SBS", "section": "정치", "url": "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01&plink=RSSREADER"},
     {"source": "SBS", "section": "사회", "url": "https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=03&plink=RSSREADER"},
     {"source": "JTBC", "section": "정치", "url": "https://fs.jtbc.co.kr/RSS/politics.xml"},
@@ -181,6 +199,8 @@ RSS_FEEDS = [
     {"source": "TV조선", "section": "정치", "url": "https://news.tvchosun.com/site/data/rss/politics.xml"},
     {"source": "TV조선", "section": "사회", "url": "https://news.tvchosun.com/site/data/rss/national.xml"},
     {"source": "노컷뉴스", "section": "사회", "url": "https://rss.nocutnews.co.kr/category/society.xml"},
+    {"source": "로리더", "section": "법률", "url": "https://www.lawleader.co.kr/rss"},
+    {"source": "법률저널", "section": "법률", "url": "http://www.lec.co.kr/rss/allArticle.xml"},
 ]
 
 ARTICLE_TYPE_BY_SOURCE = {
@@ -194,11 +214,12 @@ ARTICLE_TYPE_BY_SOURCE = {
     "채널A": "방송",
     "TV조선": "방송",
     "노컷뉴스": "온라인",
-    "법률신문": "온라인",
+    "로리더": "온라인",
+    "법률저널": "온라인",
     "온라인": "온라인",
 }
 
-EXCLUDED_ONLINE_SOURCES = {"뉴시스"}
+EXCLUDED_ONLINE_SOURCES = set()
 BROADCAST_SOURCES = {"KBS", "SBS", "MBC", "JTBC", "채널A", "TV조선"}
 ONLINE_EXCLUSIVE_EXEMPT_SOURCES = {"연합뉴스"}
 

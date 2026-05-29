@@ -224,26 +224,30 @@ def telegram_credentials():
 
 
 def send_telegram(text):
-    token, chat_ids = telegram_credentials()
-    if not token or not chat_ids:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured.")
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    chunks = split_telegram_message(text)
-    for chat_id in chat_ids:
-        for index, chunk in enumerate(chunks, start=1):
-            prefix = f"[아침보고 {index}/{len(chunks)}]\n" if len(chunks) > 1 else ""
-            payload = urllib.parse.urlencode(
-                {
-                    "chat_id": chat_id,
-                    "text": prefix + chunk,
-                    "disable_web_page_preview": "true",
-                }
-            ).encode("utf-8")
-            request = urllib.request.Request(url, data=payload, method="POST")
-            with urllib.request.urlopen(request, timeout=30) as response:
-                data = json.loads(response.read().decode("utf-8"))
-            if not data.get("ok"):
-                raise RuntimeError(f"Telegram send failed for chat_id={chat_id}.")
+    try:
+        token, chat_ids = telegram_credentials()
+        if not token or not chat_ids:
+            print("Telegram sending skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured.")
+            return
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        chunks = split_telegram_message(text)
+        for chat_id in chat_ids:
+            for index, chunk in enumerate(chunks, start=1):
+                prefix = f"[아침보고 {index}/{len(chunks)}]\n" if len(chunks) > 1 else ""
+                payload = urllib.parse.urlencode(
+                    {
+                        "chat_id": chat_id,
+                        "text": prefix + chunk,
+                        "disable_web_page_preview": "true",
+                    }
+                ).encode("utf-8")
+                request = urllib.request.Request(url, data=payload, method="POST")
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                if not data.get("ok"):
+                    print(f"Telegram send failed for chat_id={chat_id}.")
+    except Exception as exc:
+        print(f"Telegram transmission failed: {exc}")
 
 
 def split_telegram_message(text, limit=3800):
@@ -301,8 +305,6 @@ def main():
             f"mode={args.mode} "
             f"paper_total={paper['total']} paper_inserted={paper['inserted']} "
             f"online_total={online['total']} online_inserted={online['inserted']} "
-            f"lawtimes_total={online.get('lawtimes', {}).get('total', 0)} "
-            f"lawtimes_inserted={online.get('lawtimes', {}).get('inserted', 0)} "
             f"body_candidates={body_stats['candidates']} body_attempted={body_stats['attempted']} "
             f"body_fetched={body_stats['fetched']} body_failed={body_stats['failed']}"
         )

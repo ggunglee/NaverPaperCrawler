@@ -3,6 +3,21 @@ from contextlib import contextmanager
 from datetime import datetime
 
 from config import ARTICLE_TYPE_BY_SOURCE, DB_PATH, ensure_app_dirs
+import re
+
+def is_excluded_by_word_match(row_dict: dict, exclude_keywords: list[str] | None) -> bool:
+    if not exclude_keywords:
+        return False
+    title = row_dict.get("title") or ""
+    summary = row_dict.get("summary") or ""
+    body = row_dict.get("body") or ""
+    text = f"{title}\n{summary}\n{body}"
+    josa_pattern = r"(가|이|를|을|에|로|와|과|는|은|의|도|만|뿐|서|나|며|든|부터|까지|에게)?"
+    for k in exclude_keywords:
+        pattern = rf"(?<![가-힣]){re.escape(k)}{josa_pattern}(?![가-힣])"
+        if re.search(pattern, text):
+            return True
+    return False
 
 
 SCHEMA = """
@@ -251,9 +266,37 @@ class Database:
                 [category, now, *article_ids],
             )
 
+    def update_summary_and_category(self, article_id: int, summary: str | None, category: str | None):
+        now = datetime.now().isoformat(timespec="seconds")
+        category = category.strip() if category else None
+        summary = summary.strip() if summary else None
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE articles SET summary = ?, category = ?, updated_at = ? WHERE id = ?",
+                (summary, category, now, article_id),
+            )
+
     def get_article(self, article_id: int):
         with self.connect() as conn:
             return conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
+
+    def cleanup_old_uncategorized_caches(self):
+        from datetime import datetime, timedelta
+        limit_date = (datetime.now() - timedelta(days=7)).strftime("%Y%m%d")
+        now = datetime.now().isoformat(timespec="seconds")
+        with self.connect() as conn:
+            # Set body to NULL for uncategorized and un-summarized articles older than 7 days
+            conn.execute(
+                """
+                UPDATE articles
+                SET body = NULL, updated_at = ?
+                WHERE date < ?
+                  AND (category IS NULL OR category = '')
+                  AND (summary IS NULL OR summary = '')
+                  AND body IS NOT NULL
+                """,
+                (now, limit_date),
+            )
 
     def get_article_by_url(self, url: str):
         with self.connect() as conn:
@@ -271,18 +314,34 @@ class Database:
         category: str | None = None,
         article_type: str | None = None,
         exclude_keywords: list[str] | None = None,
+        strict_report_scope: bool = False,
+        datetime_from: str | None = None,
+        datetime_to: str | None = None,
+        exclude_foreign: bool = False,
     ):
         clauses = []
         params = []
-        if date:
-            clauses.append("date = ?")
-            params.append(date)
-        if date_from:
-            clauses.append("date >= ?")
-            params.append(date_from)
-        if date_to:
-            clauses.append("date <= ?")
-            params.append(date_to)
+        if datetime_from and datetime_to:
+            date_from_val = datetime_from[:10].replace("-", "").replace("/", "")
+            date_to_val = datetime_to[:10].replace("-", "").replace("/", "")
+            clauses.append("""
+                (
+                    (published_at IS NOT NULL AND published_at != '' AND published_at >= ? AND published_at <= ?)
+                    OR
+                    ((published_at IS NULL OR published_at = '') AND date >= ? AND date <= ?)
+                )
+            """)
+            params.extend([datetime_from, datetime_to, date_from_val, date_to_val])
+        else:
+            if date:
+                clauses.append("date = ?")
+                params.append(date)
+            if date_from:
+                clauses.append("date >= ?")
+                params.append(date_from)
+            if date_to:
+                clauses.append("date <= ?")
+                params.append(date_to)
         if newspaper and newspaper != "전체":
             clauses.append("newspaper LIKE ?")
             params.append(f"%{newspaper}%")
@@ -292,6 +351,14 @@ class Database:
         if article_type and article_type != "전체":
             clauses.append("article_type = ?")
             params.append(article_type)
+        if strict_report_scope:
+            clauses.append("""
+                (
+                    article_type = '지면'
+                    OR newspaper = '연합뉴스'
+                    OR (newspaper != '연합뉴스' AND article_type != '지면' AND (title LIKE '%단독%' OR title LIKE '%[단독]%'))
+                )
+            """)
         if category and category != "전체":
             if category == "(미지정)":
                 clauses.append("(category IS NULL OR category = '')")
@@ -299,20 +366,22 @@ class Database:
                 clauses.append("category = ?")
                 params.append(category)
         if keyword:
-            like = f"%{keyword}%"
-            if search_scope == "title":
-                clauses.append("title LIKE ?")
-                params.append(like)
-            elif search_scope == "title_summary_body":
-                clauses.append("(title LIKE ? OR summary LIKE ? OR body LIKE ?)")
-                params.extend([like, like, like])
-            else:
-                clauses.append("(title LIKE ? OR summary LIKE ?)")
-                params.extend([like, like])
-        for exclude in exclude_keywords or []:
-            like = f"%{exclude}%"
-            clauses.append("(title NOT LIKE ? AND summary NOT LIKE ? AND body NOT LIKE ?)")
-            params.extend([like, like, like])
+            import re
+            search_tokens = [tok.strip() for tok in re.split(r'[,;]+', keyword) if tok.strip()]
+            if search_tokens:
+                token_clauses = []
+                for token in search_tokens:
+                    like = f"%{token}%"
+                    if search_scope == "title":
+                        token_clauses.append("title LIKE ?")
+                        params.append(like)
+                    elif search_scope == "title_summary_body":
+                        token_clauses.append("(title LIKE ? OR summary LIKE ? OR body LIKE ?)")
+                        params.extend([like, like, like])
+                    else:
+                        token_clauses.append("(title LIKE ? OR summary LIKE ?)")
+                        params.extend([like, like])
+                clauses.append(f"({' OR '.join(token_clauses)})")
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         sql = f"""
             SELECT * FROM articles
@@ -326,7 +395,18 @@ class Database:
                 id ASC
         """
         with self.connect() as conn:
-            return conn.execute(sql, params).fetchall()
+            rows = conn.execute(sql, params).fetchall()
+
+        filtered = []
+        from report_generator import is_obvious_foreign, is_foreign_incidental_article
+        for row in rows:
+            row_dict = dict(row)
+            if exclude_foreign and (is_obvious_foreign(row_dict) or is_foreign_incidental_article(row_dict)):
+                continue
+            if is_excluded_by_word_match(row_dict, exclude_keywords):
+                continue
+            filtered.append(row)
+        return filtered
 
     def find_articles_by_keywords(
         self,
@@ -337,6 +417,8 @@ class Database:
         date_from: str | None = None,
         date_to: str | None = None,
         article_type: str | None = None,
+        strict_report_scope: bool = True,
+        exclude_foreign: bool = True,
     ):
         if not keywords:
             return []
@@ -357,22 +439,23 @@ class Database:
         if article_type and article_type != "전체":
             date_clauses.append("article_type = ?")
             params.append(article_type)
+        if strict_report_scope:
+            date_clauses.append("""
+                (
+                    article_type = '지면'
+                    OR newspaper = '연합뉴스'
+                    OR (newspaper != '연합뉴스' AND article_type != '지면' AND (title LIKE '%단독%' OR title LIKE '%[단독]%'))
+                )
+            """)
         for keyword in keywords:
             keyword_clauses.append("(title LIKE ? OR summary LIKE ?)")
             like = f"%{keyword}%"
             params.extend([like, like])
-        exclude_clauses = []
-        for keyword in exclude_keywords or []:
-            exclude_clauses.append("(title NOT LIKE ? AND summary NOT LIKE ?)")
-            like = f"%{keyword}%"
-            params.extend([like, like])
-        exclude_sql = f" AND {' AND '.join(exclude_clauses)}" if exclude_clauses else ""
         body_clause = "" if include_existing_body else " AND (body IS NULL OR body = '')"
         sql = f"""
             SELECT * FROM articles
             WHERE {' AND '.join(date_clauses)}
               AND ({' OR '.join(keyword_clauses)})
-              {exclude_sql}
               {body_clause}
             ORDER BY
                 COALESCE(published_at, '') DESC,
@@ -382,7 +465,18 @@ class Database:
                 id ASC
         """
         with self.connect() as conn:
-            return conn.execute(sql, params).fetchall()
+            rows = conn.execute(sql, params).fetchall()
+            
+        filtered = []
+        from report_generator import is_obvious_foreign, is_foreign_incidental_article
+        for row in rows:
+            row_dict = dict(row)
+            if exclude_foreign and (is_obvious_foreign(row_dict) or is_foreign_incidental_article(row_dict)):
+                continue
+            if is_excluded_by_word_match(row_dict, exclude_keywords):
+                continue
+            filtered.append(row)
+        return filtered
 
     def has_articles_for_date(self, date: str) -> bool:
         with self.connect() as conn:
