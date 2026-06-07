@@ -12,7 +12,7 @@
         "messages": {
           "values": [
             {
-              "content": "=너는 한국 법조/정치 뉴스 데스크의 아침 보고 보조자다.\n아래 법조/정치 기사 본문을 기반으로 2~4문장의 핵심 요약문을 작성해라.\n\n[작성 규칙]\n1. 새로 추가된 팩트나 상황 변화만 골라 요약해라. 배경 설명은 새 팩트를 이해하는 데 필요한 최소한만 쓴다.\n2. 문체는 기자가 데스크에 넘기는 아침 보고체로 쓴다. 절대 '~습니다', '~합니다', '~했습니다'로 끝내지 마라.\n3. 각 문장 끝은 주로 '~포착', '~확인돼', '~판단', '~답변', '~파악돼', '~전해져', '~밝혀', '~제출', '~산정', '~설명', '~알려져', '~조사돼' 처럼 명사형/연결형 보고체로 끝내라.\n4. 기사 제목, 매체명, 게재면은 요약 내용 안에 중복하여 쓰지 말고, 오직 핵심 본문 팩트만 요약해라.\n\n좋은 예:\n- '대통령 관저 이전 특혜' 의혹을 수사 중인 2차 종합특검팀이 당시 대통령실의 예산 마련 지시에 압박감을 느낀 행안부 공무원이 '차라리 인사 조치되는 편이 낫겠다'며 반발했던 정황을 포착. 2022년 중순 관저 이전 업무를 담당한 행안부 공무원들은 추가 비용 마련 주문을 받고선 '차라리 질책성 인사조치를 시켜달라'는 취지로 대화를 주고받아.\n- 한겨레가 6~10일 1701명을 조사한 결과 47.9%가 검찰의 보완수사 기능을 남겨둬야 한다고 답변. 특검에 공소취소 권한을 부여한 조작기소 특검법안에 대해선 51.6%가 찬성, 31.5%가 반대한다고 응답.\n\n기사 제목: {{ $json.제목 }}\n본문:\n{{ $json.내용 }}"
+              "content": "=너는 한국 법조/정치 뉴스 데스크의 아침 보고 보조자다.\n아래 제공된 [기사 목록]을 기반으로, 각 기사별 요약본을 작성하고 다음 최종 [출력 양식]에 완벽히 맞춰 하나의 통합 보고서 문서로 리턴해라.\n\n[작성 규칙]\n1. 새로 추가된 팩트나 상황 변화만 골라 요약해라. 배경 설명은 새 팩트를 이해하는 데 필요한 최소한만 쓴다.\n2. 문체는 기자가 데스크에 넘기는 아침 보고체로 쓴다. 절대 '~습니다', '~합니다', '~했습니다'로 끝내지 마라.\n3. 각 문장 끝은 주로 '~포착', '~확인돼', '~판단', '~답변', '~파악돼', '~전해져', '~밝혀', '~제출', '~산정', '~설명', '~알려져', '~조사돼' 처럼 명사형/연결형 보고체로 끝내라.\n4. 기사 제목, 매체명, 게재면은 요약 내용 안에 중복하여 쓰지 말고, 오직 핵심 본문 팩트만 요약해라.\n5. 매체명은 '신문', '뉴스', '일보' 단어를 제거하고 정제해라. (예: 경향신문 -> 경향, 노컷뉴스 -> 노컷, 연합뉴스 -> 연합)\n6. 출처/면수가 존재한다면 매체명 뒤에 한 칸 띄우고 표기해라. (예: 경향 2면, 연합 온라인)\n\n[출력 양식]\n[법조 아침보고]\n\n※기사제목/정제된매체명[섹션/면수]\n-2~4문장의 핵심 요약문(공백 없이 바로 대시 뒤에 붙여서 출력)\n기사 URL\n\n(여러 기사인 경우 위 양식을 반복하고 기사 사이에 빈 줄 하나를 비워둘 것.)\n\n[기사 목록]\n{{ $json.mergedText }}"
             }
           ]
         },
@@ -22,13 +22,14 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.2,
       "position": [
-        9264,
+        9300,
         -96
       ],
       "id": "cb05a1e1-3a3c-4849-9f5a-612a2a1a25cf",
       "name": "Message a model",
       "alwaysOutputData": false,
       "retryOnFail": true,
+      "maxTries": 3,
       "waitBetweenTries": 2000,
       "credentials": {
         "googlePalmApi": {
@@ -48,7 +49,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
       "position": [
-        8784,
+        8600,
         -96
       ],
       "webhookId": "62101d54-9097-41d9-8dc8-3c6f23b4c441"
@@ -80,7 +81,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        9088,
+        8820,
         -96
       ],
       "credentials": {
@@ -92,28 +93,28 @@
     },
     {
       "parameters": {
-        "jsCode": "let reportText = \"[법조 아침보고]\\n\\n\";\nlet dateStr = \"\";\nconst sheetsData = $('구글 시트에서 오늘자 선정 기사 읽기').all();\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const sheetItem = sheetsData[i] ? sheetsData[i].json : {};\n  \n  const title = sheetItem.제목 || \"\";\n  const source = sheetItem.매체 || \"\";\n  \n  // 매체명 정제 (경향신문 -> 경향, 노컷뉴스 -> 노컷 등)\n  let cleanSource = source.replace(\"신문\", \"\").replace(\"뉴스\", \"\").replace(\"일보\", \"\").trim();\n  \n  // 지면 면수 자동 매핑\n  let section = \"\";\n  if (sheetItem.출처) {\n    const rawSec = String(sheetItem.출처).trim();\n    if (rawSec.indexOf(\"면\") !== -1 || /^\\d+$/.test(rawSec)) {\n      section = \" \" + rawSec;\n      if (/^\\d+$/.test(rawSec)) section += \"면\";\n    }\n  }\n  \n  // 변경된 n8n 제미나이 노드의 데이터 구조에 맞춰 요약본 추출\n  let summary = \"요약 생성 실패\";\n  if (item.json.content && item.json.content.parts && item.json.content.parts[0]) {\n    summary = item.json.content.parts[0].text || \"요약 생성 실패\";\n  } else if (item.json.text) {\n    summary = item.json.text;\n  }\n  \n  const url = sheetItem.URL || \"\";\n  dateStr = sheetItem.날짜 || dateStr;\n\n  reportText += `※${title}/${cleanSource}${section}\\n`;\n  reportText += `-${summary.trim()}\\n`;\n  reportText += `${url}\\n\\n`;\n}\n\nreturn [{ json: { reportText: reportText, date: dateStr } }];"
+        "jsCode": "let mergedText = \"\";\nconst rawItems = items;\n\nfor (let i = 0; i < rawItems.length; i++) {\n  const item = rawItems[i].json;\n  const title = item.제목 || \"\";\n  const source = item.매체 || \"\";\n  const section = item.출처 || \"\";\n  const url = item.URL || \"\";\n  const body = item.내용 || item.요약 || \"\";\n  \n  mergedText += `[기사 ${i + 1}]\\n`;\n  mergedText += `제목: ${title}\\n`;\n  mergedText += `매체: ${source}\\n`;\n  mergedText += `출처/면수: ${section}\\n`;\n  mergedText += `URL: ${url}\\n`;\n  mergedText += `본문내용:\\n${body}\\n`;\n  mergedText += `--------------------\\n\\n`;\n}\n\nconst today = new Date();\nconst y = today.getFullYear();\nconst m = String(today.getMonth() + 1).padStart(2, '0');\nconst d = String(today.getDate()).padStart(2, '0');\nconst dateStr = `${y}${m}${d}`;\n\nreturn [{ json: { mergedText: mergedText, dateStr: dateStr } }];"
       },
       "id": "42621eac-f5dd-452b-8d8f-378926564bf0",
-      "name": "기사 요약 통합 및 마크다운 포맷팅",
+      "name": "기사 목록 병합",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        9536,
+        9060,
         -96
       ]
     },
     {
       "parameters": {
         "folderId": "1PRxOWFzF0BueWc2w0ej3pn7rz-ySOUna",
-        "title": "={{ $json.date }}_법조_아침보고"
+        "title": "={{ $('기사 목록 병합').first().json.dateStr }}_법조_아침보고"
       },
       "id": "81bb1ed1-9933-4fa8-82f2-6ee2fbcd4b0f",
       "name": "구글 문서 생성",
       "type": "n8n-nodes-base.googleDocs",
       "typeVersion": 2,
       "position": [
-        9744,
+        9540,
         -96
       ],
       "credentials": {
@@ -131,7 +132,7 @@
           "actionFields": [
             {
               "action": "insert",
-              "text": "={{ $('기사 요약 통합 및 마크다운 포맷팅').first().json.reportText }}"
+              "text": "={{ $('Message a model').first().json.text }}"
             }
           ]
         }
@@ -141,7 +142,7 @@
       "type": "n8n-nodes-base.googleDocs",
       "typeVersion": 2,
       "position": [
-        9968,
+        9780,
         -96
       ],
       "credentials": {
@@ -154,7 +155,7 @@
     {
       "parameters": {
         "chatId": "-5258783144",
-        "text": "=📢 *[법조 아침보고 생성 완료]*\n\n오늘자 아침보고 문서가 정상적으로 생성되었습니다. 아래 링크에서 확인하세요.\n\n🔗 [구글 문서 바로가기](<https://docs.google.com/document/d/{{ $('구글 문서 생성').first().json.id }}/edit)",
+        "text": "=📢 *[법조 아침보고 생성 완료]*\n\n오늘자 아침보고 문서가 정상적으로 생성되었습니다. 아래 링크에서 확인하세요.\n\n🔗 [구글 문서 바로가기](https://docs.google.com/document/d/{{ $('구글 문서 생성').first().json.id }}/edit)",
         "replyMarkup": "=none",
         "forceReply": {},
         "replyKeyboardOptions": {},
@@ -168,7 +169,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        10192,
+        10020,
         -96
       ],
       "webhookId": "64c3d0a5-152f-4891-b26b-234b43f35a0b",
@@ -182,17 +183,6 @@
   ],
   "pinData": {},
   "connections": {
-    "Message a model": {
-      "main": [
-        [
-          {
-            "node": "기사 요약 통합 및 마크다운 포맷팅",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "시트에서 버튼 클릭 시 실행": {
       "main": [
         [
@@ -208,6 +198,17 @@
       "main": [
         [
           {
+            "node": "기사 목록 병합",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "기사 목록 병합": {
+      "main": [
+        [
+          {
             "node": "Message a model",
             "type": "main",
             "index": 0
@@ -215,7 +216,7 @@
         ]
       ]
     },
-    "기사 요약 통합 및 마크다운 포맷팅": {
+    "Message a model": {
       "main": [
         [
           {
